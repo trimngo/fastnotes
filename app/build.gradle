@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'dev.fastnotes'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'dev.fastnotes'
+        minSdk 29
+        // Sideloaded device app: community ENote evidence requires untrusted_app_30.
+        // No network, shared storage, or other runtime permissions are requested.
+        targetSdk 30
+        versionCode 1
+        versionName '0.1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { buildConfig true }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            maxHeapSize = '1536m'
+            systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+            // Test workers need the same proxy and CA selectors as the Gradle process.
+            ['http.proxyHost', 'http.proxyPort', 'https.proxyHost', 'https.proxyPort',
+             'http.nonProxyHosts', 'https.nonProxyHosts', 'javax.net.ssl.trustStore'].each { name ->
+                if (System.getProperty(name)) systemProperty name, System.getProperty(name)
+            }
+            if (project.hasProperty('screenshotDir')) {
+                systemProperty 'fastnotes.screenshotDir', project.property('screenshotDir')
+            }
+        }
+    }
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+        // This APK is sideloaded on AiPaper. Play Store target policy does not apply;
+        // target 30 is an explicit, documented ENote compatibility requirement.
+        disable 'OldTargetApi', 'ExpiredTargetSdkVersion'
+    }
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'androidx.graphics:graphics-core:1.0.4'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}
