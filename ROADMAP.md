@@ -85,6 +85,16 @@ the visible pane. Footer states now distinguish paused native ink from fallback;
 Device details includes start bounds, orientation and local crash/exit evidence.
 Software tests cannot establish that the physical skips or crashes are resolved.
 
+## Change of approach after 0.3.1
+
+The user tested 0.3.1 and reports similar problems, including in ForestNote. The
+current callback/bitmap route is not considered a successful solution. Version
+0.3.2-test1 adds an isolated comparison test for a distinct firmware-preview route,
+with read-only API inspection and explicit separation between accepted API calls
+and observed live ink. It does not replace the note backend with another unverified
+default. The stock Notes baseline is still pending. Research, evidence limits and
+the next decision are recorded in [the ink investigation](docs/INK_INVESTIGATION.md).
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

@@ -96,3 +96,13 @@ newer build is published, the main screen should show **Update**. Select
 then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
+
+## Separate firmware-preview investigation (0.3.2-test1)
+
+0.3.1 remains unsatisfactory on the physical device and in ForestNote. Follow the
+[new comparison procedure](INK_INVESTIGATION.md) rather than treating another
+successful build or API return as an ink-performance result. The additional
+**Fastnotes Ink Test** launcher icon opens the scratch test without starting the
+normal note renderer. Report whether ink appears while the pen moves in firmware
+mode; app-drawn ink intentionally waits one second after pen-up. Copy report
+captures API signatures, stage results and input timing, without stroke contents.

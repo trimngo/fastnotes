@@ -1,4 +1,48 @@
-# Version 0.3.1 rapid-ink and split-screen validation
+# 0.3.2-test1 firmware-preview investigation validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **69 tests passed**, no failures, errors or skips. Lint has no
+errors; debug/release variants compile. Eleven new tests cover:
+
+- Read-only method inspection without vendor calls, exact scoped rectangles,
+  restoring readable settings, cleanup after an indeterminate rejected request,
+  missing APIs, leaving unreadable global toggles untouched, bounded registrations
+  on release failure, and preserving settings changed elsewhere.
+- Calling a non-public service proxy through its public typed interface without
+  invoking the app-side native initializer.
+- No Android-drawn ink before the documented one-second quiet interval in firmware
+  test mode, versus immediate Android-mode drawing.
+- Private diagnostic activity and isolated-process launcher metadata, preserved
+  stored notes/no editor startup, and bounded persistent call-stage evidence.
+
+These are contract/Skia tests. They do not establish that AutoDraw works on a real
+full-size device or that Android process isolation prevents every possible vendor
+or system-server failure. The release is an investigation build, not a new claim
+that ink latency/skipping or crashes are fixed. The user's 0.3.1 feedback remains
+negative, including similar problems in ForestNote. The stock Notes baseline and
+actual 3.15.15 firmware-preview visual result are still pending.
+
+See [primary-source findings and the device experiment](INK_INVESTIGATION.md).
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test1` (code 5)
+- Minimum API 29; target API 30; note format 1; same certificate as prior builds
+- Existing normal note backend retained. New launcher **Fastnotes Ink Test** and
+  Settings → Ink comparison test enter a temporary scratch test in `:inktest`.
+- No saved-sheet data opened in that test; no stroke content written to reports
+- APK SHA-256: `ec11fafd0d0fa487fce912e8bfac6cfe41e0c47050f6fac750ca745deab3a3f9`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+---
+
+## Earlier 0.3.1 rapid-ink and split-screen validation
 
 Software checks performed on 30 October 2026:
 

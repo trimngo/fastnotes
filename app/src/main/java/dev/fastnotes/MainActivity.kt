@@ -23,6 +23,8 @@ import dev.fastnotes.ink.Tool
 import dev.fastnotes.model.Note
 import dev.fastnotes.updates.UpdateActivity
 import dev.fastnotes.updates.UpdateState
+import dev.fastnotes.diagnostics.InkTestActivity
+import dev.fastnotes.diagnostics.InkProbeLog
 import java.text.DateFormat
 import java.util.Date
 
@@ -358,7 +360,7 @@ class MainActivity : Activity() {
         })
         label("Turn this off to use compatibility rendering if ink does not display correctly.")
         content.addView(Switch(this).apply {
-            text = "Viwoods fast ink (recommended)"
+            text = "Viwoods fast ink (experimental)"
             isChecked = paper.panelAvailable && app.preferences.getBoolean("viwoodsNativeInk", true)
             isEnabled = paper.panelAvailable
             setTextColor(Color.BLACK); minHeight = dp(48)
@@ -377,6 +379,11 @@ class MainActivity : Activity() {
         })
         label("Notes stay on this device. Uninstalling removes them. This version has no sync or note encryption.")
         content.addView(button("Device details") { about() })
+        content.addView(button("Ink comparison test") {
+            paper.finishGesture(false)
+            save()
+            startActivity(Intent(this, InkTestActivity::class.java))
+        })
         content.addView(button("App updates") { openUpdates() })
         show(AlertDialog.Builder(this).setTitle("Paper & input")
             .setView(ScrollView(this).apply { addView(content) })
@@ -396,6 +403,7 @@ class MainActivity : Activity() {
             "\nAverage Android event age: " + String.format(java.util.Locale.ROOT, "%.1f ms", average) +
             "\nThis is app input timing, not pen-to-visible-ink latency." +
             "\n\n" + app.crashes.details() +
+            "\n\nLast firmware test:\n" + InkProbeLog.read(this) +
             "\n\nFor testing: try both landscape rotations, portrait, Chrome split-screen, pen erasing, scrolling, and reopening a saved sheet."
         show(AlertDialog.Builder(this).setTitle("Fastnotes " + BuildConfig.VERSION_NAME)
             .setMessage(details)

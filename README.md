@@ -1,10 +1,11 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. Version 0.3.1 targets gaps in rapid live handwriting and native
-ink startup in landscape split-screen. Native callbacks and FAST mode were confirmed
-on the user's full-size tablet in 0.3.0; the new refresh and window handling still
-need a physical-device comparison.
+keeps notes offline. **0.3.2-test1 is an investigation build**, not a claimed ink
+fix. The user reports similar problems in 0.3.1 and ForestNote. It adds an isolated
+comparison of ordinary Android drawing and firmware-drawn preview so the next
+backend decision can use evidence from the actual full-size firmware.
+See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 
 ## In this version
 
@@ -35,6 +36,11 @@ need a physical-device comparison.
   follows the physical display, including when a narrow pane reports portrait.
 - Device details includes native startup/visibility/timing diagnostics and private
   crash/Android process-exit evidence without note contents or exception messages.
+- **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
+  process. It can inspect firmware capabilities and try a scoped firmware preview
+  without opening saved notes. Copy report exports only diagnostic evidence.
+  The additional **Fastnotes Ink Test** launcher icon opens that test directly,
+  so the existing note renderer need not run first.
 - Automatic checks for GitHub app updates, including development releases, with
   downloads and Android installation available inside the app.
 

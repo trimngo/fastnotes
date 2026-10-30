@@ -23,6 +23,21 @@
                 android:resource="@xml/update_paths" />
         </provider>
         <activity
+            android:name=".diagnostics.InkTestActivity"
+            android:exported="false"
+            android:process=":inktest"
+            android:resizeableActivity="true" />
+        <activity-alias
+            android:name=".InkTestLauncher"
+            android:targetActivity=".diagnostics.InkTestActivity"
+            android:exported="true"
+            android:label="Fastnotes Ink Test">
+            <intent-filter android:priority="-1">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity
             android:name=".updates.UpdateActivity"
             android:exported="false"
             android:resizeableActivity="true" />
