@@ -28,12 +28,9 @@ The immediate use case is writing alongside the user's German app.
 
 - Device: full-size Viwoods AiPaper.
 - Firmware: **3.15.15**, reported by the user.
-- Android version: **Android 13 expected**, based on
-  [Viwoods' full-size AiPaper specifications](https://viwoods.com/pages/compare-aipaper),
-  checked on 30 October 2026. The installed Android version has not been read
-  from the tablet, and an official mapping for the exact 3.15.15 firmware was
-  not found. Detect the Android version in the first app build and verify device
-  capabilities before depending on vendor-specific behavior.
+- Android version: **Android 13 / API 33**, confirmed by the user from Fastnotes'
+  device details. Verify runtime capabilities before depending on vendor-specific
+  behavior; the exact full-size model/build string has not yet been supplied.
 - Pen: original Viwoods pen; the user uses its eraser.
 - Writing hand: right-handed; account for this in control placement and palm
   rejection testing.
@@ -44,19 +41,22 @@ The immediate use case is writing alongside the user's German app.
 No integration beyond side-by-side use has been requested. Do not assume OCR,
 translation, or an integration API is required for this first milestone.
 
-## Implementation status: 0.1.0
+## Implementation status: 0.2.0 native-ink test
 
 The first Android implementation includes portrait/landscape resizing, one
 scrolling lined sheet, adjustable spacing, pen and hardware-eraser input, palm
 guard, undo/redo, named sheets, and automatic local saving with backup recovery.
-Android front-buffer rendering is the default. A separate Viwoods panel adapter
-is experimental, opt-in, and suspended in split-screen.
+On 0.1.0, the user reported severe lag with both modes, plus brief static squares
+with bitmap-only panel acceleration enabled, while full-screen in portrait.
+The user requested acceleration on by default and cited ForestNote as a partial
+working reference.
 
-The debug APK and unsigned release build compile. All 24 automated tests pass,
-and Android lint reports zero errors. These checks do not complete the first
-milestone's hardware validation: full-size firmware 3.15.15 compatibility,
-physical panel clipping, Chrome split-screen behavior and actual pen-to-visible-
-ink latency remain to be checked on the user's AiPaper.
+Version 0.2.0 replaces that option with direct ENote pen callbacks, a dedicated
+live preview, per-stroke native transactions, FAST mode and explicit canonical
+handoff. It is enabled by default when its API is available. The current native
+compatibility target remains API 30; this explains the older-Android installer
+message on Android 13. Usable handwriting now takes priority over removing that
+message. The native path still needs on-device performance and artifact checks.
 
 See [validation evidence](docs/VALIDATION.md) and the
 [device test guide](docs/DEVICE_TESTING.md).

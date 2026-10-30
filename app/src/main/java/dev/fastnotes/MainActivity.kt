@@ -2,6 +2,8 @@ package dev.fastnotes
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -100,7 +102,7 @@ class MainActivity : Activity() {
             onEngineChanged = { updateHint() }
             palmGuard = app.preferences.getBoolean("palmGuard", true)
             setRendering(app.preferences.getBoolean("frontBuffer", true),
-                app.preferences.getBoolean("viwoodsPanel", false))
+                app.preferences.getBoolean("viwoodsNativeInk", true))
         }
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(rule())
@@ -205,12 +207,13 @@ class MainActivity : Activity() {
 
     private fun updateHint() {
         if (!::hint.isInitialized || !::paper.isInitialized) return
-        hint.text = when (paper.tool) {
+        val instruction = when (paper.tool) {
             Tool.ERASER -> "Erase whole strokes · Undo restores them"
             Tool.MOVE -> "Drag with the pen or a finger to scroll"
             Tool.PEN -> if (paper.palmGuard) "Palm guard on · two fingers or arrows to scroll"
                 else "Pen writes · one finger scrolls"
         }
+        hint.text = (if (paper.nativeActive) "Viwoods native · " else "Android ink · ") + instruction
     }
 
     private fun sheets() {
@@ -327,23 +330,23 @@ class MainActivity : Activity() {
             setTextColor(Color.BLACK); minHeight = dp(48)
             setOnCheckedChangeListener { _, checked ->
                 app.preferences.edit().putBoolean("frontBuffer", checked).apply()
-                paper.setRendering(checked, app.preferences.getBoolean("viwoodsPanel", false))
+                paper.setRendering(checked, app.preferences.getBoolean("viwoodsNativeInk", true))
             }
         })
         label("Turn this off to use compatibility rendering if ink does not display correctly.")
         content.addView(Switch(this).apply {
-            text = "Viwoods panel acceleration"
-            isChecked = app.preferences.getBoolean("viwoodsPanel", false)
+            text = "Viwoods fast ink (recommended)"
+            isChecked = paper.panelAvailable && app.preferences.getBoolean("viwoodsNativeInk", true)
             isEnabled = paper.panelAvailable
             setTextColor(Color.BLACK); minHeight = dp(48)
             setOnCheckedChangeListener { _, checked ->
-                app.preferences.edit().putBoolean("viwoodsPanel", checked).apply()
+                app.preferences.edit().putBoolean("viwoodsNativeInk", checked).apply()
                 paper.setRendering(app.preferences.getBoolean("frontBuffer", true), checked)
             }
         })
         label(if (paper.panelAvailable)
-            "Experimental · full-screen only. Unverified on full-size AiPaper firmware 3.15.15. Android ink stays available in split-screen."
-            else "The Viwoods panel interface is not available on this device. Android ink is active.")
+            "Uses firmware pen callbacks directly. Enabled by default. Turn off to compare Android input."
+            else "The native Viwoods input interface was not found. Android ink is active.")
         label("Notes stay on this device. Uninstalling removes them. This version has no sync or note encryption.")
         content.addView(button("Device details") { about() })
         show(AlertDialog.Builder(this).setTitle("Paper & input")
@@ -353,16 +356,25 @@ class MainActivity : Activity() {
 
     private fun about() {
         val average = if (paper.sampleCount > 0) paper.sampleAgeTotalMs.toDouble() / paper.sampleCount else 0.0
-        message("Fastnotes " + BuildConfig.VERSION_NAME,
-            "Model: " + Build.MODEL +
+        val details = "Model: " + Build.MODEL +
             "\nAndroid: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")" +
+            "\nApp compatibility target: API " + applicationInfo.targetSdkVersion +
             "\nSystem build: " + Build.DISPLAY +
             "\nReported AiPaper firmware: 3.15.15" +
             "\n\n" + paper.engineDescription +
+            "\n" + paper.nativeDiagnostics +
             "\nInput samples this session: " + paper.sampleCount +
             "\nAverage input event age: " + String.format(java.util.Locale.ROOT, "%.1f ms", average) +
             "\nThis is app input timing, not pen-to-visible-ink latency." +
-            "\n\nFor testing: try both landscape rotations, portrait, Chrome split-screen, pen erasing, scrolling, and reopening a saved sheet.")
+            "\n\nFor testing: try both landscape rotations, portrait, Chrome split-screen, pen erasing, scrolling, and reopening a saved sheet."
+        show(AlertDialog.Builder(this).setTitle("Fastnotes " + BuildConfig.VERSION_NAME)
+            .setMessage(details)
+            .setNeutralButton("Copy") { _, _ ->
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(
+                    ClipData.newPlainText("Fastnotes device details", details))
+                Toast.makeText(this, "Device details copied", Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton("OK", null).create())
     }
 
     private fun message(title: String, text: String) {

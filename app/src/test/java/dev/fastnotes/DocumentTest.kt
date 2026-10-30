@@ -5,6 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DocumentTest {
+    @Test fun nativeStrokeIdentifiersRemainUniqueAfterReturningToAndroidInput() {
+        val editor = NoteEditor(Note())
+        editor.addAll(listOf(Stroke(40, 2f, listOf(InkPoint(10f, 20f)))))
+        val androidStroke = editor.newStroke(listOf(InkPoint(20f, 30f)))
+        assertEquals(41L, androidStroke.id)
+    }
+
     @Test fun rotationAndSplitScreenPreserveDocumentCoordinates() {
         val original = InkPoint(425f, 1600f)
         for ((width, height) in listOf(1920 to 2400, 2660 to 1400, 900 to 1400)) {

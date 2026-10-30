@@ -1,15 +1,19 @@
 # AiPaper device testing
 
 Target: full-size Viwoods AiPaper, firmware **3.15.15**, original pen and eraser,
-right-handed use. The manufacturer lists Android 13; use **Settings → Device
-details** in Fastnotes to record the actual installed Android version and build.
+right-handed use. The user confirmed Android 13/API 33. Use **Settings → Device
+details → Copy** in Fastnotes to copy the model, build and native-route counters.
 
-No tablet is attached to the build environment. All hardware checks below remain
-pending until performed on the real device.
+No tablet is attached to the build environment. Version 0.1.0 was tested by the
+user: writing was very laggy and the bitmap-only acceleration option produced
+brief static squares in full-screen portrait. Version 0.2.0 changes that path
+to direct native input and needs a fresh hardware check.
 
 ## First pass
 
-1. Install the development APK and write a few short practice lines. Test dots,
+1. Install the development APK over the existing app, without uninstalling.
+   Start full-screen in portrait and check that the footer says **Viwoods native**.
+   Write a few short practice lines. Test dots,
    quick loops, long diagonal strokes and rapid pen-down/pen-up movements.
 2. Flip the original pen to its eraser, or use its eraser button if that is the
    pen's mechanism. Verify that it removes whole strokes and that Undo restores
@@ -31,16 +35,22 @@ pending until performed on the real device.
 
 ## Rendering
 
-Start with the default low-latency renderer. If ink is blank, flickers, or leaves
-incorrect content, turn **Low-latency rendering** off to test the compatibility
-renderer. Record whether the artifact appears in an Android screenshot, on the
-physical display only, or both.
+Viwoods fast ink is on by default when its native callback API is present. After
+a short writing test, open **Settings → Device details → Copy**. Native callbacks,
+accepted samples and panel updates should be nonzero. Last native picture mode
+should be 4 (FAST). The app pauses native input under this dialog, so its status
+may say paused even when the writing test used the native route.
 
-Viwoods panel acceleration is experimental and off by default. Only try it in a
-full-screen window after confirming normal writing and saving work. It is
-automatically suspended in split-screen and under dialogs or while unfocused.
-If it behaves incorrectly, turn it off. No firmware modification, rooting, or
-global device setting change is part of this application.
+Compare the delay and static squares against 0.1.0 and ForestNote. If native
+samples stay at zero, copy the API/fallback reason rather than assuming the
+native route is working. A silent listener is automatically disabled and held
+Android input is replayed so it does not swallow the first stroke.
+
+Try **Viwoods fast ink** off to compare Android input, and the **Low-latency
+rendering** switch to compare Android front-buffer and compatibility rendering.
+Record whether an artifact is visible in a screenshot, on the physical display
+only, or both. No firmware modification or rooting is involved. The app restores
+the previous display mode when native ink stops.
 
 ## Measure actual latency
 

@@ -47,12 +47,15 @@ class NoteEditor(initial: Note) {
     fun newStroke(points: List<InkPoint>) = Stroke(nextId++, note.penWidth, points.toList())
 
     fun add(stroke: Stroke) {
-        if (stroke.points.isNotEmpty()) change(note.strokes + stroke)
+        addAll(listOf(stroke))
     }
 
     fun addAll(strokes: List<Stroke>) {
         val nonempty = strokes.filter { it.points.isNotEmpty() }
-        if (nonempty.isNotEmpty()) change(note.strokes + nonempty)
+        if (nonempty.isNotEmpty()) {
+            nextId = maxOf(nextId, nonempty.maxOf { it.id } + 1)
+            change(note.strokes + nonempty)
+        }
     }
 
     fun erase(ids: Set<Long>) {

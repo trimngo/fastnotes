@@ -1,30 +1,51 @@
 package dev.fastnotes
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Rect
-import dev.fastnotes.ink.ViwoodsPanel
+import android.graphics.*
+import android.view.MotionEvent
+import dev.fastnotes.ink.*
+import dev.fastnotes.model.*
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
-/** Contract fake only: cannot establish that real firmware implements this contract. */
+interface FakeNativeListener {
+    fun onInput(x: Int, y: Int, pressure: Int, tilt: Float, tool: Int, action: Int, button: Int, buttons: Int)
+}
+
+/** API contract fake, not a claim about physical firmware. */
 class FakePanel {
     var enabled = false
     var foreground: Bitmap? = null
     var background: Bitmap? = null
-    var rendered: Rect? = null
+    var rendered = ArrayList<Rect>()
     var fail = false
+    var input: FakeNativeListener? = null
+    var starts = 0
+    var ends = 0
+    var pictureMode = 3
     fun setWritingJavaBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { foreground = bitmap }
     fun setWritingJavaBackgroundBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { background = bitmap }
     fun setWritingEnabled(value: Boolean) { enabled = value }
-    fun renderWriting(rect: Rect) { check(!fail); rendered = Rect(rect) }
-    fun onWritingEnd() {}
+    fun setWritingInputlistener(listener: FakeNativeListener?) { input = listener }
+    fun setWritingInputJumpPointCount(value: Int) {}
+    fun setRenderWritingDelayCount(value: Int) {}
+    fun renderWriting(rect: Rect) { check(!fail); rendered.add(Rect(rect)) }
+    fun onWritingStart() { starts++ }
+    fun onWritingEnd() { ends++ }
     fun releaseWritingJavaBitmap() { foreground = null }
     fun releaseWritingJavaBackgroundBitmap() { background = null }
+    fun emit(action: Int, x: Int, y: Int, tool: Int = 2, pressure: Int = 1024, buttons: Int = 0) {
+        input?.onInput(x, y, pressure, 0f, tool, action, 0, buttons)
+    }
+    fun reset() {
+        enabled = false; foreground = null; background = null; rendered.clear()
+        fail = false; input = null; starts = 0; ends = 0; pictureMode = 3
+    }
     companion object {
         private val singleton = FakePanel()
         @JvmStatic fun getInstance() = singleton
@@ -33,38 +54,151 @@ class FakePanel {
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PanelTest {
-    @Test fun partialRefreshIsClippedAndOffsetToOnlyOurView() {
-        val fake = FakePanel.getInstance().apply { fail = false; rendered = null }
-        val panel = ViwoodsPanel(FakePanel::class.java.name)
-        assertTrue(panel.available())
-        assertTrue(panel.start(RuntimeEnvironment.getApplication(),
-            Bitmap.createBitmap(500, 600, Bitmap.Config.ARGB_8888), 120, 80, 1))
-        panel.render(Rect(-100, -200, 900, 900))
-        assertEquals(Rect(120, 80, 620, 680), fake.rendered)
-        fake.rendered = null
-        panel.render(Rect(1000, 1000, 1200, 1200))
-        assertNull(fake.rendered)
-        panel.stop()
-        assertFalse(fake.enabled)
-        assertNull(fake.foreground)
-        assertNull(fake.background)
+    private lateinit var fake: FakePanel
+    private lateinit var panel: ViwoodsPanel
+    private lateinit var source: Bitmap
+    private val note = Note()
+
+    @Before fun setup() {
+        fake = FakePanel.getInstance().apply { reset() }
+        panel = ViwoodsPanel(FakePanel::class.java.name)
+        source = Bitmap.createBitmap(500, 600, Bitmap.Config.ARGB_8888)
+        PaperRasterizer().page(Canvas(source), note, Viewport(1000f, 500, 600, 0f))
     }
 
-    @Test fun unavailableApiAndRenderFailuresFallBackWithoutRetainingBitmaps() {
-        val missing = ViwoodsPanel("dev.fastnotes.DoesNotExist")
-        assertFalse(missing.available())
-        assertFalse(missing.start(RuntimeEnvironment.getApplication(),
-            Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888), 0, 0, 1))
-        val fake = FakePanel.getInstance().apply { fail = false }
-        val panel = ViwoodsPanel(FakePanel::class.java.name)
-        assertTrue(panel.start(RuntimeEnvironment.getApplication(),
-            Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888), 0, 0, 1))
-        fake.fail = true
-        panel.render(Rect(0, 0, 20, 20))
-        assertFalse(panel.active)
+    private fun start(page: Note = note) {
+        assertTrue(panel.available())
+        assertTrue(panel.start(RuntimeEnvironment.getApplication(), source, page, 120, 80, 1))
+    }
+
+    @Test fun callbackThreadDrawsImmediatelyIntoSeparateBitmapAndHandsOffAfterModelCommit() {
+        start()
+        val worker = Thread {
+            fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+            fake.emit(MotionEvent.ACTION_MOVE, 250, 253)
+        }
+        worker.start(); worker.join()
+        assertTrue(panel.penDown)
+        assertTrue(panel.drainEdits().isEmpty())
+        assertNotSame(source, fake.foreground)
+        assertEquals(Color.BLACK, fake.foreground!!.getPixel(80, 123))
+        assertEquals(Color.WHITE, source.getPixel(80, 123))
+        fake.emit(MotionEvent.ACTION_UP, 300, 303)
+        val add = panel.drainEdits().single() as NativeEdit.Add
+        assertEquals(InkPoint(160f, 246f), add.strokes.single().points.first())
+        assertEquals(InkPoint(360f, 446f), add.strokes.single().points.last())
+        assertEquals(1, fake.starts)
+        assertEquals(0, fake.ends)
+        panel.acknowledge()
+        assertEquals(1, fake.ends)
+        assertTrue(fake.rendered.isNotEmpty())
+        panel.stop()
+    }
+
+    @Test fun renderingIsClippedToOurFrozenWindowAndOutsidePenDownIsIgnored() {
+        start()
+        fake.emit(MotionEvent.ACTION_DOWN, 10, 10)
+        assertEquals(0, fake.starts)
+        fake.emit(MotionEvent.ACTION_DOWN, 121, 81)
+        fake.emit(MotionEvent.ACTION_MOVE, 619, 679)
+        fake.emit(MotionEvent.ACTION_UP, 619, 679)
+        val bounds = Rect(120, 80, 620, 680)
+        assertTrue(fake.rendered.all { bounds.contains(it) })
+        val added = (panel.drainEdits().single() as NativeEdit.Add).strokes.single()
+        assertTrue(added.points.all { it.x in 0f..1000f && it.y in 0f..1200f })
+        panel.stop()
+    }
+
+    @Test fun cancelRestoresPreviewAndNeverPersistsCanceledInk() {
+        start()
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+        fake.emit(MotionEvent.ACTION_MOVE, 300, 303)
+        assertEquals(Color.BLACK, fake.foreground!!.getPixel(80, 123))
+        fake.emit(MotionEvent.ACTION_CANCEL, 300, 303)
+        assertTrue(panel.drainEdits().isEmpty())
+        assertEquals(Color.WHITE, fake.foreground!!.getPixel(80, 123))
+        panel.acknowledge()
+        assertEquals(1, fake.ends)
+        panel.stop()
+    }
+
+    @Test fun rapidNextStrokeIsNotOverwrittenByPreviousHandoff() {
+        start()
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+        fake.emit(MotionEvent.ACTION_UP, 210, 213)
+        fake.emit(MotionEvent.ACTION_DOWN, 300, 403)
+        fake.emit(MotionEvent.ACTION_MOVE, 310, 413)
+        val first = panel.drainEdits().single() as NativeEdit.Add
+        panel.acknowledge()
+        assertEquals(0, fake.ends)
+        assertEquals(Color.BLACK, fake.foreground!!.getPixel(180, 323))
+        fake.emit(MotionEvent.ACTION_UP, 320, 423)
+        val second = panel.drainEdits().single() as NativeEdit.Add
+        assertNotEquals(first.strokes.single().id, second.strokes.single().id)
+        panel.acknowledge()
+        assertEquals(1, fake.ends)
+        panel.stop()
+    }
+
+    @Test fun hardwareEraserRemovesWholeStrokeAndCanceledEraseRestoresIt() {
+        val stroke = Stroke(5, 3f, listOf(InkPoint(160f, 246f), InkPoint(360f, 446f)))
+        val page = note.copy(strokes = listOf(stroke))
+        PaperRasterizer().page(Canvas(source), page, Viewport(1000f, 500, 600, 0f))
+        start(page)
+        fake.emit(MotionEvent.ACTION_DOWN, 250, 253, tool = 4)
+        fake.emit(MotionEvent.ACTION_CANCEL, 250, 253, tool = 4)
+        assertTrue(panel.drainEdits().isEmpty())
+        assertEquals(Color.BLACK, fake.foreground!!.getPixel(80, 123))
+        fake.emit(MotionEvent.ACTION_DOWN, 250, 253, buttons = MotionEvent.BUTTON_STYLUS_PRIMARY)
+        fake.emit(MotionEvent.ACTION_UP, 250, 253, buttons = MotionEvent.BUTTON_STYLUS_PRIMARY)
+        assertEquals(setOf(5L), (panel.drainEdits().single() as NativeEdit.Erase).ids)
+        panel.stop()
+    }
+
+    @Test fun pressureBearingHoverSamplesAreTreatedAsInkAndFingerDataIsIgnored() {
+        start()
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203, tool = 1)
+        assertEquals(0, fake.starts)
+        fake.emit(MotionEvent.ACTION_HOVER_MOVE, 200, 203)
+        fake.emit(MotionEvent.ACTION_HOVER_MOVE, 250, 253)
+        fake.emit(MotionEvent.ACTION_UP, 300, 303)
+        assertEquals(3, (panel.drainEdits().single() as NativeEdit.Add).strokes.single().points.size)
+        panel.stop()
+    }
+
+    @Test fun stoppedListenerCannotWriteIntoRestartedSessionAndModeIsRestored() {
+        start()
+        assertEquals(4, fake.pictureMode)
+        val stale = fake.input!!
+        panel.stop()
+        assertNull(fake.input)
         assertFalse(fake.enabled)
         assertNull(fake.foreground)
+        assertEquals(3, fake.pictureMode)
+        start()
+        stale.onInput(200, 203, 1024, 0f, 2, MotionEvent.ACTION_DOWN, 0, 0)
+        assertFalse(panel.penDown)
+        assertTrue(panel.drainEdits().isEmpty())
+        panel.stop()
+    }
+
+    @Test fun renderFailureAndUnavailableApiReleaseResourcesWithoutThrowing() {
+        val absent = ViwoodsPanel("dev.fastnotes.DoesNotExist")
+        assertFalse(absent.available())
+        assertFalse(absent.start(RuntimeEnvironment.getApplication(), source, note, 0, 0, 1))
+        start()
+        var failures = 0
+        panel.onFailure = { failures++ }
+        fake.fail = true
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+        assertFalse(panel.active)
+        assertEquals(1, failures)
+        panel.stop()
+        assertNull(fake.input)
+        assertNull(fake.foreground)
         assertNull(fake.background)
+        assertEquals(3, fake.pictureMode)
     }
 }

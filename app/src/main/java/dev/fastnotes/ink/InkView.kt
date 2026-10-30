@@ -16,7 +16,7 @@ import kotlin.math.*
 enum class Tool { PEN, ERASER, MOVE }
 
 /** UI-thread model/input, render-thread bitmap reads. Disk I/O never enters this class. */
-class InkView(context: Context) : FrameLayout(context) {
+class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()) : FrameLayout(context) {
     private val lock = Any()
     private var editor: NoteEditor? = null
     private var bitmap: Bitmap? = null
@@ -25,7 +25,7 @@ class InkView(context: Context) : FrameLayout(context) {
         color = Color.BLACK; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
         style = Paint.Style.STROKE
     }
-    private val paperPaint = Paint().apply { color = Color.rgb(180, 180, 180); strokeWidth = 1f }
+    private val raster = PaperRasterizer()
     private data class Segment(val a: InkPoint, val b: InkPoint, val width: Float)
     private val pending = ArrayDeque<Segment>()
     private var redrawFront = true
@@ -33,7 +33,17 @@ class InkView(context: Context) : FrameLayout(context) {
         override fun onDraw(canvas: Canvas) { drawScene(canvas) }
     }
     private val front = LowLatencyCanvasView(context)
-    private val panel = ViwoodsPanel()
+    private var panelFailed = false
+    private var nativeFailureReason = ""
+    private var drainingNative = false
+    private val heldAndroidEvents = ArrayList<MotionEvent>()
+    private var heldDownTime = Long.MAX_VALUE
+    private val nativeWatchdog = Runnable {
+        if (panel.active && heldAndroidEvents.isNotEmpty()) {
+            if (panel.lastInkTime >= heldDownTime) clearHeldEvents()
+            else failNative("No in-window native pen samples")
+        }
+    }
     private var frontEnabled = true
     private var panelWanted = false
     private var foreground = false
@@ -50,7 +60,12 @@ class InkView(context: Context) : FrameLayout(context) {
     private var touchCount = 0
     private var gestureViewport: Viewport? = null
     var tool = Tool.PEN
-        set(value) { finishGesture(false); field = value }
+        set(value) {
+            finishGesture(false)
+            stopNative()
+            field = value
+            refreshEngine()
+        }
     var palmGuard = true
         set(value) { touchCentroid = null; field = value }
     var onEdited: (() -> Unit)? = null
@@ -62,6 +77,8 @@ class InkView(context: Context) : FrameLayout(context) {
         private set
 
     init {
+        panel.onEditsAvailable = { post { drainNative() } }
+        panel.onFailure = { post { failNative(panel.status) } }
         setBackgroundColor(Color.WHITE)
         clipChildren = true
         clipToPadding = true
@@ -98,6 +115,7 @@ class InkView(context: Context) : FrameLayout(context) {
 
     fun bind(editor: NoteEditor) {
         finishGesture(false)
+        stopNative()
         this.editor = editor
         rebuild()
         refreshEngine()
@@ -106,6 +124,8 @@ class InkView(context: Context) : FrameLayout(context) {
     fun setRendering(frontBuffer: Boolean, viwoods: Boolean) {
         frontEnabled = frontBuffer
         panelWanted = viwoods
+        panelFailed = false
+        nativeFailureReason = ""
         refreshEngine()
     }
 
@@ -118,10 +138,17 @@ class InkView(context: Context) : FrameLayout(context) {
     }
 
     val panelAvailable get() = panel.available()
+    val nativeDiagnostics get() = panel.status + "\nNative callbacks: " + panel.rawEventCount +
+        " · accepted samples: " + panel.sampleCount + " · panel updates: " + panel.renderCount +
+        "\nLast native picture mode: " + panel.lastActiveMode + " (4 = FAST)" +
+        if (nativeFailureReason.isBlank()) "" else "\nFallback: " + nativeFailureReason
+    val nativeActive get() = panel.active
     val engineDescription: String get() = when {
-        panel.active -> panel.status
-        panelWanted && multiWindow -> "Android ink · panel mode paused in split-screen"
-        panelWanted && panel.status.startsWith("Panel API") -> panel.status
+        panel.active -> "Viwoods direct pen input"
+        panelFailed -> "Android ink · " + nativeFailureReason
+        panelWanted && !panelAvailable -> "Android ink · native callback API unavailable"
+        panelWanted && tool != Tool.MOVE && (!foreground || obscured || !hasWindowFocus()) ->
+            "Viwoods native ink paused for dialog or background"
         front.visibility == View.VISIBLE -> "Android front-buffer ink"
         else -> "Android compatibility ink"
     }
@@ -131,7 +158,8 @@ class InkView(context: Context) : FrameLayout(context) {
     private fun viewport(): Viewport? = editor?.note?.let { Viewport(it.pageWidth, width, height, it.scrollY) }
 
     fun scrollByScreen(pixels: Float) {
-        if (penPointer >= 0 && !movingPen) return
+        if ((penPointer >= 0 && !movingPen) || panel.penDown) return
+        stopNative()
         val view = viewport() ?: return
         editor?.scroll(view.scrollY + pixels / view.scale)
         rebuild()
@@ -146,7 +174,7 @@ class InkView(context: Context) : FrameLayout(context) {
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        panel.stop()
+        stopNative()
         finishGesture(false)
         super.onSizeChanged(w, h, oldw, oldh)
         rebuild()
@@ -161,20 +189,25 @@ class InkView(context: Context) : FrameLayout(context) {
 
     override fun onDetachedFromWindow() {
         finishGesture(false)
-        panel.stop()
+        stopNative()
         super.onDetachedFromWindow()
     }
 
     private fun refreshEngine() {
-        panel.stop()
+        stopNative()
         val image = bitmap
-        if (panelWanted && foreground && !obscured && !multiWindow && hasWindowFocus() &&
+        if (editor != null && panelWanted && !panelFailed && tool != Tool.MOVE && foreground && !obscured && hasWindowFocus() &&
             image != null && image.width == width && image.height == height) {
             val location = IntArray(2)
             getLocationOnScreen(location)
             val visible = Rect()
             if (getGlobalVisibleRect(visible) && visible.width() == width && visible.height() == height) {
-                panel.start(context, image, location[0], location[1], resources.configuration.orientation)
+                val started = panel.start(context, image, editor!!.note, location[0], location[1],
+                    resources.configuration.orientation, tool == Tool.ERASER)
+                if (!started && panel.available()) {
+                    panelFailed = true
+                    nativeFailureReason = panel.status
+                }
             }
         }
         front.visibility = if (frontEnabled && isHardwareAccelerated && !panel.active) View.VISIBLE else View.GONE
@@ -183,11 +216,11 @@ class InkView(context: Context) : FrameLayout(context) {
         onEngineChanged?.invoke()
     }
 
-    private fun rebuild() {
+    private fun rebuild(restartNative: Boolean = true) {
         if (width <= 0 || height <= 0) return
         // Stop any firmware reference before replacing or repainting its bitmap.
         val wasPanel = panel.active
-        panel.stop()
+        if (restartNative) stopNative()
         synchronized(lock) {
             pending.clear()
             if (bitmap?.width != width || bitmap?.height != height) {
@@ -195,35 +228,14 @@ class InkView(context: Context) : FrameLayout(context) {
                 bitmapCanvas = Canvas(bitmap!!)
             }
             val canvas = bitmapCanvas ?: return
-            canvas.drawColor(Color.WHITE)
             val view = viewport() ?: return
             val note = editor!!.note
-            val firstLine = floor(view.scrollY / note.lineSpacing).toInt()
-            val lastLine = ceil((view.scrollY + view.visibleHeight) / note.lineSpacing).toInt()
-            for (i in firstLine..lastLine) {
-                val y = (i * note.lineSpacing - view.scrollY) * view.scale
-                canvas.drawLine(0f, y, width.toFloat(), y, paperPaint)
-            }
-            val margin = note.pageWidth * 0.055f * view.scale
-            canvas.drawLine(margin, 0f, margin, height.toFloat(), paperPaint)
-            for (stroke in note.strokes) {
-                if (stroke.id !in erased && stroke.bottom + stroke.width >= view.scrollY &&
-                    stroke.top - stroke.width <= view.scrollY + view.visibleHeight) {
-                    drawStroke(canvas, stroke.points, stroke.width, view)
-                }
-            }
-            if (!gestureEraser && activePoints.isNotEmpty()) drawStroke(canvas, activePoints, note.penWidth, view)
-            if (!gestureEraser) for (piece in pieces) drawStroke(canvas, piece, note.penWidth, view)
+            raster.page(canvas, note, view, erased)
+            if (!gestureEraser && activePoints.isNotEmpty()) raster.stroke(canvas, activePoints, note.penWidth, view)
+            if (!gestureEraser) for (piece in pieces) raster.stroke(canvas, piece, note.penWidth, view)
         }
-        presentScene()
-        if (wasPanel) post { refreshEngine() }
-    }
-
-    private fun drawStroke(canvas: Canvas, points: List<InkPoint>, width: Float, view: Viewport) {
-        if (points.isEmpty()) return
-        if (points.size == 1) drawSegment(canvas, Segment(view.screen(points[0]), view.screen(points[0]), width * view.scale))
-        for (i in 1 until points.size) drawSegment(canvas, Segment(view.screen(points[i - 1]),
-            view.screen(points[i]), width * view.scale))
+        if (panel.active) classic.invalidate() else presentScene()
+        if (restartNative && (wasPanel || panelWanted)) post { refreshEngine() }
     }
 
     @AnyThread
@@ -238,6 +250,7 @@ class InkView(context: Context) : FrameLayout(context) {
 
     @AnyThread
     private fun drawScene(canvas: Canvas) {
+        if (panel.drawPreview(canvas)) return
         synchronized(lock) {
             canvas.drawColor(Color.WHITE)
             bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
@@ -260,6 +273,30 @@ class InkView(context: Context) : FrameLayout(context) {
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (editor == null || obscured) return false
+        if (panel.active && tool != Tool.MOVE &&
+            (0 until event.pointerCount).any { isPen(event, it) }) {
+            lastPenTime = SystemClock.uptimeMillis()
+            if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                panel.finish(true)
+                drainNative()
+                clearHeldEvents()
+            } else if (panel.lastInkTime >= event.downTime) {
+                clearHeldEvents()
+            } else {
+                val firstHeld = heldAndroidEvents.isEmpty()
+                if (firstHeld) heldDownTime = event.downTime
+                heldAndroidEvents.add(MotionEvent.obtain(event))
+                // A connected-but-silent private listener must not silently eat a stroke.
+                if (firstHeld) postDelayed(nativeWatchdog, 120)
+                if (heldAndroidEvents.size > 100) failNative("Native listener did not produce ink")
+            }
+            return true
+        }
+        return androidTouch(event)
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun androidTouch(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
             finishGesture(true); touchCentroid = null; return true
         }
@@ -360,10 +397,6 @@ class InkView(context: Context) : FrameLayout(context) {
                 floor(min(segment.a.y, segment.b.y)).toInt() - padding,
                 ceil(max(segment.a.x, segment.b.x)).toInt() + padding,
                 ceil(max(segment.a.y, segment.b.y)).toInt() + padding)
-            if (panel.active) {
-                panel.render(dirty)
-                if (!panel.active) post { refreshEngine() }
-            }
             if (front.visibility == View.VISIBLE) front.renderFrontBufferedLayer()
             else {
                 synchronized(lock) { pending.clear() }
@@ -373,6 +406,10 @@ class InkView(context: Context) : FrameLayout(context) {
     }
 
     fun finishGesture(cancel: Boolean) {
+        if (!drainingNative) {
+            panel.finish(cancel)
+            drainNative()
+        }
         val changed = !cancel && (if (gestureEraser) erased.isNotEmpty()
             else activePoints.isNotEmpty() || pieces.isNotEmpty())
         if (changed) {
@@ -396,7 +433,8 @@ class InkView(context: Context) : FrameLayout(context) {
     }
 
     private fun scrollTouch(event: MotionEvent) {
-        if (penPointer >= 0 || (palmGuard && SystemClock.uptimeMillis() - lastPenTime < 500)) {
+        if (penPointer >= 0 || panel.penDown || (palmGuard &&
+            SystemClock.uptimeMillis() - maxOf(lastPenTime, panel.lastPenTime) < 500)) {
             touchCentroid = null; return
         }
         val indices = (0 until event.pointerCount).filter {
@@ -410,5 +448,58 @@ class InkView(context: Context) : FrameLayout(context) {
         touchCount = indices.size
         touchCentroid?.let { scrollByScreen(it - y) }
         touchCentroid = y
+    }
+
+    private fun drainNative() {
+        if (drainingNative) return
+        drainingNative = true
+        try {
+            val completed = panel.drainEdits()
+            for (edit in completed) {
+                when (edit) {
+                    is NativeEdit.Add -> editor?.addAll(edit.strokes)
+                    is NativeEdit.Erase -> editor?.erase(edit.ids)
+                }
+                onEdited?.invoke()
+            }
+            if (completed.isNotEmpty()) {
+                clearHeldEvents()
+                // Keep the native preview untouched if a newer stroke is already in flight.
+                rebuild(restartNative = false)
+            }
+            panel.acknowledge()
+            if (completed.isNotEmpty()) onEngineChanged?.invoke()
+        } finally { drainingNative = false }
+    }
+
+    private fun stopNative() {
+        panel.stop()
+        drainNative()
+        clearHeldEvents()
+    }
+
+    private fun clearHeldEvents() {
+        removeCallbacks(nativeWatchdog)
+        heldAndroidEvents.forEach { it.recycle() }
+        heldAndroidEvents.clear()
+        heldDownTime = Long.MAX_VALUE
+    }
+
+    private fun failNative(reason: String) {
+        if (panelFailed) return
+        panelFailed = true
+        nativeFailureReason = reason
+        val replay = if (panel.lastInkTime < heldDownTime) heldAndroidEvents.toList() else emptyList()
+        val discard = if (replay.isEmpty()) heldAndroidEvents.toList() else emptyList()
+        heldAndroidEvents.clear()
+        removeCallbacks(nativeWatchdog)
+        panel.stop()
+        drainNative()
+        refreshEngine()
+        discard.forEach { it.recycle() }
+        for (event in replay) {
+            androidTouch(event)
+            event.recycle()
+        }
     }
 }

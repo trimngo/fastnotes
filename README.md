@@ -1,8 +1,9 @@
 # Fastnotes
 
 A small, offline Android handwriting notepad for the **full-size Viwoods AiPaper**.
-Version 0.1.0 is a first device-testing build. Full-size panel latency and firmware
-3.15.15 compatibility still require testing on the actual tablet.
+Version 0.2.0 tests a direct Viwoods pen-input path after the first build exhibited
+lag and transient static squares on the user's full-size tablet. Full-size panel
+latency and the correction still need confirmation on the physical device.
 
 ## In this version
 
@@ -16,11 +17,15 @@ Version 0.1.0 is a first device-testing build. Full-size panel latency and firmw
 - Multiple named sheets, automatic local saving, and reopening the last sheet.
 - Atomic saves, checksums, bounded decoding, and recovery of the previous saved
   copy if the latest file is damaged.
-- Android front-buffer rendering by default, unbuffered stylus dispatch and
-  historical sample processing. A compatibility renderer is available in Settings.
-- An opt-in, experimental Viwoods bitmap/panel adapter. It is disabled in
-  split-screen and when obscured, paused, or unfocused. It has not been validated
-  on the full-size device.
+- Viwoods direct pen callbacks enabled by default when the required firmware
+  interfaces are present. A dedicated worker bitmap supplies live ink without
+  repainting Android Views for every pen sample.
+- Canonical stroke handoff after pen-up, explicit native writing transactions,
+  clipped partial refreshes and temporary FAST display mode restored on exit.
+- Android front-buffer input/rendering as a fallback. A silent native listener
+  falls back after a short watchdog interval and replays held Android input.
+- Native input is suspended when obscured, paused, unfocused, or using the Move
+  tool. View geometry is captured on the UI thread and frozen for each session.
 
 Tap the sheet title to rename it. Use **Sheets** to create or reopen a sheet.
 **Erase** removes whole strokes; **Undo** restores them. Line spacing changes the
@@ -33,10 +38,15 @@ Use the signed development APK attached to the project's GitHub development
 release. Download it in Chrome on the AiPaper and open the APK to install it.
 Android may ask you to allow APK installation from Chrome or the file manager.
 Future APKs must use the same application ID and signing key to update in place.
+Install over 0.1.0 to preserve saved sheets; uninstalling is not needed.
 
 Open **Settings → Device details** to see the actual Android version, model and
 system build. Input timing shown there measures delivery to the application,
 **not** pen-to-visible-ink latency.
+
+The footer identifies **Viwoods native** or **Android ink**. Device details shows
+native callback/sample/refresh counts and any fallback reason. Check these values
+after a short writing test to establish which route actually ran.
 
 Follow [the device test guide](docs/DEVICE_TESTING.md), particularly Chrome
 split-screen, both landscape rotations, palm rejection, erasing and reopening.
@@ -75,6 +85,9 @@ checks its SHA-256 and does not build, re-sign, or receive a signing key.
 This is a sideloaded device app with target SDK 30 for the documented Viwoods
 ENote compatibility context, not a Play Store submission. See
 [ink backend details](docs/INK_BACKENDS.md) for the evidence and support boundary.
+Android 13 can report that the APK targets an older Android version: API 30 is
+Android 11. This compatibility target is intentional for the current native-ink
+test and is separate from the tablet's actual Android 13/API 33 version.
 
 ## Verification
 

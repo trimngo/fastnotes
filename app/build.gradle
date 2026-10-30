@@ -13,8 +13,8 @@ android {
         // Sideloaded device app: community ENote evidence requires untrusted_app_30.
         // No network, shared storage, or other runtime permissions are requested.
         targetSdk 30
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 2
+        versionName '0.2.0'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
