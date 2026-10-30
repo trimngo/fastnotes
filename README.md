@@ -68,6 +68,10 @@ The APK is `app/build/outputs/apk/debug/app-debug.apk`. Preserve the development
 signing key outside the repository. Keys, APKs, local settings and build output
 are ignored by Git.
 
+For release delivery, a signed APK can be staged on a separate builds branch
+and attached by the Publish signed development APK workflow. That workflow
+checks its SHA-256 and does not build, re-sign, or receive a signing key.
+
 This is a sideloaded device app with target SDK 30 for the documented Viwoods
 ENote compatibility context, not a Play Store submission. See
 [ink backend details](docs/INK_BACKENDS.md) for the evidence and support boundary.

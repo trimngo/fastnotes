@@ -1,0 +1,54 @@
+name: Publish signed development APK
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_commit:
+        description: Commit containing the already signed APK and SHA256SUMS
+        required: true
+        type: string
+      release_tag:
+        description: Existing development release tag
+        required: true
+        type: string
+      sha256:
+        description: Verified SHA-256 of the APK
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.artifact_commit }}
+          persist-credentials: false
+      - name: Validate staged artifact
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_SHA256: ${{ inputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          tag = os.environ["RELEASE_TAG"]
+          expected = os.environ["EXPECTED_SHA256"]
+          assert re.fullmatch(r"v[0-9A-Za-z._-]+", tag), "Invalid tag"
+          assert re.fullmatch(r"[0-9a-f]{64}", expected), "Invalid checksum"
+          name = f"fastnotes-{tag}.apk"
+          apk = pathlib.Path(name)
+          assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected, "APK checksum mismatch"
+          with zipfile.ZipFile(apk) as archive:
+              assert "AndroidManifest.xml" in archive.namelist(), "Not an APK"
+          metadata = json.loads(pathlib.Path("build.json").read_text())
+          assert metadata["sha256"] == expected
+          assert metadata["application_id"] == "dev.fastnotes"
+          pathlib.Path("SHA256SUMS").write_text(f"{expected}  {name}\n")
+          with open(os.environ["GITHUB_ENV"], "a") as out:
+              out.write(f"APK_FILE={name}\n")
+          PY
+      - name: Attach the verified APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" "$APK_FILE" SHA256SUMS --repo "$GITHUB_REPOSITORY"
