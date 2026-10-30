@@ -13,8 +13,8 @@ android {
         // Sideloaded device app: community ENote evidence requires untrusted_app_30.
         // Network access is used only for GitHub app updates; notes remain local.
         targetSdk 30
-        versionCode 6
-        versionName '0.3.2-test2'
+        versionCode 7
+        versionName '0.3.2-test3'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

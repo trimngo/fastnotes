@@ -2,6 +2,7 @@ package dev.fastnotes.diagnostics
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
@@ -23,6 +24,9 @@ class InkTestView(context: Context) : View(context) {
     private var lastX = 0f
     private var lastY = 0f
     private var inside = false
+    private var nativeSnapshot: Bitmap? = null
+    private var captureNative: ((Canvas) -> Boolean)? = null
+    private var nativePenDown: (() -> Boolean)? = null
     var firmwareTest = false
         private set
     var samples = 0L
@@ -30,15 +34,42 @@ class InkTestView(context: Context) : View(context) {
     var maxEventAgeMs = 0L
         private set
     var onStrokeFinished: (() -> Unit)? = null
-    private val settle = Runnable {
-        if (pointer < 0) { committed = completed.size; invalidate(); onStrokeFinished?.invoke() }
+    private val settle: Runnable = Runnable {
+        // Native completion is authoritative: firmware may suppress duplicate Android UPs.
+        if ((captureNative != null || pointer < 0) && nativePenDown?.invoke() != true) {
+            captureNative?.let { capture ->
+                // Freeze the completed image: an unrelated Android redraw must never expose
+                // a new native stroke early and masquerade as firmware presentation.
+                val image = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                if (capture(Canvas(image))) {
+                    nativeSnapshot?.recycle()
+                    nativeSnapshot = image
+                } else {
+                    image.recycle()
+                    // A new native sample may have arrived between the UI guard and the
+                    // locked capture. Keep the old image until a full quiet interval.
+                    postDelayed(settle, 1000)
+                    return@Runnable
+                }
+            }
+            committed = completed.size; invalidate(); onStrokeFinished?.invoke()
+        }
     }
 
-    fun mode(firmware: Boolean) { clear(); firmwareTest = firmware }
+    fun mode(firmware: Boolean) {
+        captureNative = null; nativePenDown = null
+        clear(); firmwareTest = firmware
+    }
+    fun nativeMode(capture: (Canvas) -> Boolean, penDown: () -> Boolean) {
+        mode(true)
+        captureNative = capture; nativePenDown = penDown
+    }
+    fun nativeStrokeFinished() { removeCallbacks(settle); postDelayed(settle, 1000) }
     fun clear() {
         removeCallbacks(settle)
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         samples = 0; maxEventAgeMs = 0
+        nativeSnapshot?.recycle(); nativeSnapshot = null
         invalidate()
     }
 
@@ -47,6 +78,7 @@ class InkTestView(context: Context) : View(context) {
         val spacing = 48 * resources.displayMetrics.density
         var y = spacing
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, lines); y += spacing }
+        nativeSnapshot?.let { canvas.drawBitmap(it, 0f, 0f, null); return }
         val count = if (firmwareTest) committed else completed.size
         for (index in 0 until count) canvas.drawPath(completed[index], ink)
         if (!firmwareTest) current?.let { canvas.drawPath(it, ink) }
@@ -98,5 +130,8 @@ class InkTestView(context: Context) : View(context) {
         if (!firmwareTest) invalidate()
     }
 
-    override fun onDetachedFromWindow() { removeCallbacks(settle); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() {
+        removeCallbacks(settle); nativeSnapshot?.recycle(); nativeSnapshot = null
+        super.onDetachedFromWindow()
+    }
 }

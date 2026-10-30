@@ -104,6 +104,17 @@ before vendor initialization, so its result does not measure firmware preview.
 view on cleanup, retain explicit failure stages, and keep UI text from resizing
 the active canvas. Physical drawing and split-screen compatibility remain unverified.
 
+The user confirmed that test2 produced ink **only after lifting the pen and
+waiting**. The reported view call returned and 1,026 Android samples had maximum
+event age 7 ms, but no live preview was observed. This configuration is not a
+working ink backend; the unreadable global enable flag remained untouched.
+Test3 therefore compares pane-sized and full-display native buffers using the
+same existing controller and refresh policy. Stock WiNote's display-sized buffers
+motivate the hypothesis; they do not prove it is the cause or solution. The test
+keeps refreshes inside the visible pane, captures only quiet completed snapshots,
+records a user-selected visual result, and offers Updates directly. The normal
+notebook renderer is not replaced pending real-device evidence.
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

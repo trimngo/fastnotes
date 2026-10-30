@@ -58,8 +58,8 @@ pages were read directly. No newer exact firmware fix or official SDK was verifi
 | Approach | Current evidence | Next useful action |
 | --- | --- | --- |
 | ENote callbacks plus Java bitmap blits | Active on the user's tablet; 0.3.1 remains unsatisfactory | Keep as historical baseline; stop adjusting timing without new evidence |
-| System-drawn preview plus separately captured Android strokes | Exposed by the community SDK; full-size behavior unverified | Run an isolated scoped-region experiment and inspect actual 3.15.15 API signatures |
-| Full-display native buffers matching WiNote's geometry | Observed in inspected stock-app code | Test separately if the scoped preview route fails; first obtain exact firmware evidence |
+| System-drawn preview plus separately captured Android strokes | Test2's view API returned on 3.15.15; user observed no live ink | Record the negative result for this configuration; global enable remains unreadable/unchanged |
+| Full-display native buffers, motivated by WiNote's geometry | Display-sized buffers/origin-zero background observed in stock-app code | Test3 compares pane and display buffer placement with the same callback/refresh controller |
 | Vendor-supported API or per-app optimization | Community research describes vendor app-specific optimization; no contract verified for Fastnotes | Prepare a precise vendor request using device/API/test evidence |
 | New ordinary Canvas/GPU/C++ renderer | Does not by itself establish access to a different e-ink presentation path | Do not present a language/library replacement as a solution to unmeasured panel behavior |
 | Privileged/system-app or firmware changes | Some stock-app modification projects use this access | Not part of the current diagnostic experiment |
@@ -157,22 +157,75 @@ status area reserves its height, so reporting progress cannot move the registere
 canvas and immediately cancel the test. Real pane/focus changes still stop it.
 The same one-second Android ink holdback and user-observed live-ink test apply.
 
+## Test2 hardware result and the test3 buffer comparison
+
+The user's pasted test2 report records full-screen portrait, canvas
+`[0,358][1920,2400]`, a completed `getInstance(Context)` and
+`setViewAutoDrawEnabled` request, and 1,026 Android samples with maximum event age
+7 ms. The user then explicitly reported: **"Ink appeared only after lifting the
+pen and waiting."** That is the intentionally delayed Android fallback. No live
+firmware preview was observed, so this view configuration cannot be integrated
+as a working backend. Successful calls and fast sample delivery did not establish
+visible ink. The earlier test1 failure in "Previous run" is historical.
+
+The tool getter returned `-1`; its meaning is undocumented here. Global AutoDraw
+enable remained unreadable and unchanged. This negative trial does not prove
+every possible firmware-preview configuration is unavailable. It does establish
+that this exact tested setup did not work. The shared exit entries continue to
+report user/system stops with status 0, without a crash/low-memory classification.
+Landscape/split-screen and the stock Notes baseline are still unmeasured.
+
+Test3 switches the scratchpad to a controlled **Native pane / Native display**
+comparison. Both use the **same existing `ViwoodsPanel` controller**, pen width,
+callback handling and paced refresh policy. Native pane registers a canvas-sized
+buffer at its screen origin. Native display registers a real-display-sized buffer
+at `(0,0)`. Both reject input outside the same visible canvas rectangle and clip
+every `renderWriting` request there. No other application's pixels are captured;
+the buffers are generated paper and temporary scratch ink. Display dimensions
+come from the full rotated display, rather than split-window resource metrics.
+
+This tests a layout/stride/offset hypothesis suggested by the inspected stock
+buffers. It **does not copy WiNote's Rj renderer**, establish the vendor's buffer
+contract, or guarantee that a larger bitmap fixes gaps. The normal notebook
+backend remains the earlier implementation. The failed view route is no longer
+offered as a promising comparison button; its probe/inspection code is retained
+for reference. No global AutoDraw flag/exclusion, root setting or firmware image
+is changed.
+
+App rendering in native modes uses a **frozen completed snapshot**, captured only
+after a full second of pen-up/quiet under the controller's input lock. Android
+redraws during a later stroke cannot expose its current bitmap as supposed live
+ink. Native stroke completion schedules this without requiring duplicate Android
+pen events. Scratch native edits are drained and acknowledged in memory, never
+stored. Fresh controller identity rejects queued callbacks from a stopped test.
+Focus loss, resize/rotation, Updates, pause and exit stop the native controller.
+Buffer allocation is limited to eight million pixels per bitmap.
+
+The UI exposes all controls in rows rather than hiding them horizontally. A
+direct **Updates** button opens the existing updater. The user can explicitly
+choose **Smooth**, **Gaps / lag** or **No live ink**; the default is **Not recorded**.
+Copy report includes that observation per comparison, buffer dimensions/origin,
+clipped screen bounds, raw/accepted native counts, refresh counts/mode and call
+timing. These counters still exclude visible panel latency.
+
 ## Device experiment and decision
 
 1. Compare the same rapid continuous up/down pattern in stock Notes, full-screen
    and in the desired landscape layout. This baseline question is still pending.
-2. Open **Fastnotes Ink Test** from the launcher (or Settings → Ink comparison
-   test). Write once with **Android pen**, then select **Firmware
-   preview** and repeat. Observe ink **while the pen is down**. A blank interval
-   followed by ink one second after pen-up means only the Android fallback was
-   observed. Do not count that as accelerated firmware drawing.
-3. Repeat with Chrome left/test right in landscape, selecting Firmware preview
-   again after focus/layout changes. Copy the report, plus the visual result.
-4. If firmware preview is complete and quick, integrate that path into real notes
-   with a verified handoff/eraser/resize lifecycle. If registration is unsupported,
-   fails, or produces no immediate ink, use the report to inspect exact full-size
-   framework behavior or seek Viwoods' supported integration. Do not release more
-   purported fixes based solely on method presence or unit-test counts.
+2. Open **Fastnotes Ink Test**. Select **Native pane**, draw the rapid pattern,
+   then choose the observed result. Select **Native display**, repeat and choose
+   its result, then **Copy report**. Observe ink while the pen moves. A complete
+   image appearing only after the one-second quiet snapshot is not live ink.
+3. Repeat with Chrome left/test right in landscape, selecting the native test
+   again after focus/layout changes. Use **Updates** for subsequent app updates.
+4. If display buffers clearly improve live ink, integrate that placement into real
+   notes with verified eraser/scroll/resize/handoff behavior. If both native modes
+   remain poor, use their concrete geometry/counts and a stock Notes comparison
+   to seek the vendor's supported native integration. Further timing-only builds
+   are not justified by the current evidence.
+
+A [technical vendor request](VIWOODS_SUPPORT_REQUEST.md) is prepared from the
+confirmed evidence and unresolved API contracts. It has not been sent.
 
 No existing external application's code, vendor APK, proprietary binary or SDK
 was copied into Fastnotes. Only interface facts were used for this independently

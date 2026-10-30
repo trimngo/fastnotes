@@ -25,6 +25,8 @@ class FakePanel {
     var enabled = false
     var foreground: Bitmap? = null
     var background: Bitmap? = null
+    var foregroundBounds: Rect? = null
+    var nativeOrientation = 0
     var rendered = ArrayList<Rect>()
     var fail = false
     var input: FakeNativeListener? = null
@@ -34,7 +36,9 @@ class FakePanel {
     var listenerBindings = 0
     var renderStarted: CountDownLatch? = null
     var resumeRender: CountDownLatch? = null
-    fun setWritingJavaBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { foreground = bitmap }
+    fun setWritingJavaBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) {
+        foreground = bitmap; foregroundBounds = Rect(x, y, x + bitmap.width, y + bitmap.height); nativeOrientation = rotation
+    }
     fun setWritingJavaBackgroundBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { background = bitmap }
     fun setWritingEnabled(value: Boolean) { enabled = value }
     fun setWritingInputlistener(listener: FakeNativeListener?) {
@@ -57,7 +61,7 @@ class FakePanel {
         input?.onInput(x, y, pressure, 0f, tool, action, 0, buttons)
     }
     fun reset() {
-        enabled = false; foreground = null; background = null; rendered.clear()
+        enabled = false; foreground = null; background = null; foregroundBounds = null; nativeOrientation = 0; rendered.clear()
         fail = false; input = null; starts = 0; ends = 0; pictureMode = 3
         renderStarted = null; resumeRender = null
         listenerBindings = 0

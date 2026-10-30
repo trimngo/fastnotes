@@ -1,4 +1,52 @@
-# 0.3.2-test2 actual-firmware view API validation
+# 0.3.2-test3 native buffer comparison validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **83 tests passed**, no failures, errors or skips. Lint has no
+errors; debug/release variants compile. Added/updated regressions verify:
+
+- Pane and full-display native buffers use their intended dimensions/origins,
+  map the same screen samples to the scratchpad and keep all requested refreshes
+  inside a partially visible right-hand canvas.
+- Native completion works without Android events; queued completion from an old
+  controller cannot affect a replacement.
+- Invalid/oversized geometry is rejected before native initialization, and stop
+  clears listener/bitmap registrations while retaining only diagnostic counters.
+- Snapshot capture requires pen-up and a full quiet interval under the input
+  lock. Android redraws keep a frozen image during a later native stroke, even
+  if a duplicate Android DOWN never receives an UP.
+- Activity status changes preserve buffer geometry; focus/resize/Updates stop
+  native drawing, user observations enter Copy report and reset for a new test,
+  and opening Updates does not open saved notes.
+
+The user's test2 result is now confirmed negative: only the delayed Android
+fallback appeared after pen-up. That result is recorded in the investigation.
+Test3 tests a buffer-placement hypothesis motivated by inspected stock WiNote
+code, using the same native callback/refresh implementation for both modes. It
+does **not** establish real-device latency, a working alternative backend or
+landscape split-screen reliability. No tablet is attached to this environment.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test3` (code 7)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- Scratch test remains in `:inktest`; normal notebook rendering uses its previous
+  default behavior. The controller's quiet-snapshot guard is opt-in for diagnostics.
+- No saved notes or scratch coordinates are written into diagnostic reports
+- APK bytes: `7928956`
+- APK SHA-256: `6038eff6eeee57a750b2cbecd3a859447c4ba1f8337ab218a42f34ad855a889c`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [hardware evidence and the comparison procedure](INK_INVESTIGATION.md).
+
+---
+
+## Earlier 0.3.2-test2 actual-firmware view API validation
 
 Software checks performed on 30 October 2026:
 

@@ -1,11 +1,12 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test2 is an investigation build**, not a claimed ink
-fix. The user's 3.15.15 report showed that test1 could not start its preview:
-its assumed rectangle API was not exposed. Test2 uses the reported
-`setViewAutoDrawEnabled(View, boolean)` API on a separate scratchpad, with exact
-failure-stage reporting. Actual full-size preview behavior still needs testing.
+keeps notes offline. **0.3.2-test3 is an investigation build**, not a claimed ink
+fix. The user's test2 call completed but produced no live ink; only the delayed
+Android fallback appeared. Test3 compares **Native pane** and **Native display**:
+the same native controller with pane-sized versus full-display buffers. It also
+records the user's visual result and provides a direct **Updates** button in the
+scratch test. Actual full-size performance remains unverified.
 See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 
 ## In this version
@@ -38,8 +39,10 @@ See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 - Device details includes native startup/visibility/timing diagnostics and private
   crash/Android process-exit evidence without note contents or exception messages.
 - **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
-  process. It can inspect firmware capabilities and try a scoped firmware preview
-  without opening saved notes. Copy report exports only diagnostic evidence.
+  process. It compares Android pen, Native pane and Native display, with native
+  refresh requests clipped to the visible scratchpad. App-drawn native snapshots
+  wait one second after pen-up. Choose **Smooth**, **Gaps / lag** or **No live ink**
+  before Copy report. **Updates** is directly accessible from this screen.
   The additional **Fastnotes Ink Test** launcher icon opens that test directly,
   so the existing note renderer need not run first.
 - Automatic checks for GitHub app updates, including development releases, with

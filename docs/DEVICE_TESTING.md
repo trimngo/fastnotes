@@ -99,20 +99,23 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Separate firmware-preview investigation (0.3.2-test2)
+## Separate native buffer comparison (0.3.2-test3)
 
-0.3.1 remains unsatisfactory on the physical device and in ForestNote. Follow the
-[new comparison procedure](INK_INVESTIGATION.md) rather than treating another
-successful build or API return as an ink-performance result. The additional
-**Fastnotes Ink Test** launcher icon opens the scratch test without starting the
-normal note renderer. Report whether ink appears while the pen moves in firmware
-mode; app-drawn ink intentionally waits one second after pen-up. Copy report
-captures API signatures, stage results and input timing, without stroke contents.
+0.3.1 remains unsatisfactory on the physical device and in ForestNote. Test2's
+view request returned, but the user observed ink only after lifting the pen and
+waiting: only the Android fallback was seen. See [actual evidence and the buffer
+experiment](INK_INVESTIGATION.md).
 
-Test2 uses the view API exposed in the user's actual 3.15.15 report. Choose
-Firmware preview, observe whether complete ink appears while the pen moves,
-then Copy report. An accepted request is still unverified. If it fails, the report
-now identifies the exact stage and root exception type. Test full-screen first,
-then landscape with Chrome on the left; select Firmware preview again after
-switching focus or resizing. The temporary scratch view is explicitly disabled
-on focus loss, pause, resize or exit. Status updates keep its geometry stable.
+1. Open **Fastnotes Ink Test** directly. Use **Native pane** for the same rapid
+   up/down pattern. After writing, choose **Smooth**, **Gaps / lag**, or **No live
+   ink** according to what appeared while the pen moved.
+2. Select **Native display**, repeat the same pattern and choose its result.
+   App snapshots are intentionally held until one second after pen-up in both
+   modes. Delayed completion alone is not live native drawing.
+3. Tap **Copy report**. Both comparisons, geometry, native counts and selected
+   observations are included. No scratch handwriting is written into the report.
+4. Repeat in landscape with Chrome left/test right. Select a mode again after
+   changing focus or geometry. Native refresh requests must stay within the
+   scratchpad. Compare the stock Viwoods Notes app under the same conditions.
+5. The test now has a direct **Updates** button. It stops the native comparison
+   and opens the normal updater without requiring access to Settings.

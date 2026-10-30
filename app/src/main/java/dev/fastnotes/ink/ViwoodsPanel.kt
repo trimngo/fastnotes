@@ -402,8 +402,11 @@ class ViwoodsPanel internal constructor(
 
     fun finish(cancel: Boolean) = synchronized(lock) { if (penDown) finishLocked(cancel) }
 
-    fun drawPreview(target: Canvas): Boolean = synchronized(lock) {
+    fun drawPreview(target: Canvas, quietMs: Long = 0): Boolean = synchronized(lock) {
         if (!active) return false
+        // The diagnostic snapshot checks under the same lock that owns pen/sample updates.
+        // Normal notebook drawing keeps its existing immediate behavior (quietMs = 0).
+        if (quietMs > 0 && (penDown || SystemClock.uptimeMillis() - lastInkTime < quietMs)) return false
         val image = frame ?: return false
         target.drawBitmap(image, 0f, 0f, null)
         true
