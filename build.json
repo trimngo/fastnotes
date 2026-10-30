@@ -1,0 +1,11 @@
+{
+  "application_id": "dev.fastnotes",
+  "version": "0.3.1",
+  "version_code": 4,
+  "min_sdk": 29,
+  "sha256": "8e277394acf1aa20a9d57f26c2b49c5a4a01c1cea21eeee411060d3f0df0250c",
+  "bytes": 7836932,
+  "signing_certificate": "2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601",
+  "source_commit": "ef96ed59994c4070e186fb53356767015eadbc7f",
+  "release_tag": "v0.3.1-dev.1"
+}
