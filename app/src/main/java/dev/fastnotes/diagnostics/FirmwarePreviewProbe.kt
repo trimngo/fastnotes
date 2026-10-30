@@ -4,41 +4,50 @@ import android.content.Context
 import android.graphics.Rect
 import android.os.IBinder
 import android.util.AtomicFile
+import android.view.View
 import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 internal data class FirmwareEndpoint(val receiver: Any, val api: Class<*>, val route: String)
 
-/** Scoped system-service experiment. No Java bitmap, input listener, initWriting or raw Binder codes. */
+/** Owned-view/scoped-region experiment. No bitmap, input listener, initWriting or raw Binder codes. */
 class FirmwarePreviewProbe internal constructor(
     private val context: Context,
     private val checkpoint: (String) -> Unit,
-    private val connection: () -> FirmwareEndpoint
+    private val connection: (View?, (String) -> Unit) -> FirmwareEndpoint
 ) {
     constructor(context: Context, className: String = "android.os.enote.ENoteSetting", checkpoint: (String) -> Unit = {}) :
-        this(context, checkpoint, { connect(className, checkpoint) })
+        this(context, checkpoint, { view, trace -> connect(context, className, view != null, trace) })
     private var receiver: Any? = null
     private var methods = emptyList<Method>()
     private var registered: Rect? = null
+    private var registeredView: View? = null
     private var previousMode: Int? = null
     private var previousTool: Int? = null
     private var enabledChange: Triple<String, String, Boolean>? = null
+    private var lastStage = "Not started"
     var status = "Firmware preview has not been requested."
         private set
-    val hasRegistration get() = registered != null
+    val hasRegistration get() = registered != null || registeredView != null
 
-    fun start(rect: Rect): Boolean {
+    fun start(rect: Rect, view: View? = null): Boolean {
         if (!stop()) { status = "Previous firmware test cleanup could not be confirmed. Close this test."; return false }
         if (rect.isEmpty) { status = "The test area is not visible."; return false }
+        if (view != null && !view.isAttachedToWindow) { status = "The test view is not attached to a window."; return false }
         return try {
-            val endpoint = connection()
+            record("Selecting firmware connection; owned view=${view != null}")
+            val endpoint = connection(view, ::record)
             receiver = endpoint.receiver
             // Invoke methods declared on the actual ROM interface, not a possibly non-public
             // Binder Proxy implementation. No guessed transaction IDs or bundled AIDL stubs.
             methods = endpoint.api.methods.toList()
-            check(find("addAutoDrawRect", arrayOf(rect)) != null && find("removeAutoDrawRect", arrayOf(rect)) != null)
-            checkpoint("Connected through ${endpoint.route}")
+            val useView = view != null && find("setViewAutoDrawEnabled", arrayOf(view, true)) != null
+            if (!useView && !hasRegionApi(endpoint.api)) {
+                record("No usable scope API: need setViewAutoDrawEnabled(View, boolean) with an attached view, or add/removeAutoDrawRect(Rect)")
+                throw UnsupportedOperationException()
+            }
+            record("Connected through ${endpoint.route}; scope=${if (useView) "owned view" else "exact rectangle"}")
             if (find("setApplicationContext", arrayOf(context.applicationContext)) != null) {
                 call("setApplicationContext", context.applicationContext)
             }
@@ -62,35 +71,51 @@ class FirmwarePreviewProbe internal constructor(
                 }
                 break
             }
-            checkpoint(if (enableObserved == null) "AutoDraw enable getter unavailable; global flag left unchanged"
+            record(if (enableObserved == null) "AutoDraw enable getter unavailable; global flag left unchanged"
                 else "AutoDraw enable observed=$enableObserved; changed=${enabledChange != null}")
             val tool = read("getAutoDrawToolType") as? Int
-            checkpoint("AutoDraw tool observed=$tool")
+            record("AutoDraw tool observed=$tool")
             if (tool != null && tool != 2 && find("setAutoDrawToolType", arrayOf(2)) != null) {
                 previousTool = tool
                 call("setAutoDrawToolType", 2)
             }
-            // Save the exact rect before calling: even a failing IPC may have registered it.
-            registered = Rect(rect)
-            call("addAutoDrawRect", Rect(rect))
-            status = "Region request accepted via ${endpoint.route}. Visible firmware ink is still unverified."
-            checkpoint(status + " Rect=" + rect.toShortString())
+            // Record ownership before calling: an IPC may take effect before reporting failure.
+            // The scratch view is new and owned by this test; disable that same view on cleanup.
+            if (useView) {
+                registeredView = view
+                call("setViewAutoDrawEnabled", view, true)
+            } else {
+                registered = Rect(rect)
+                call("addAutoDrawRect", Rect(rect))
+            }
+            status = "${if (useView) "View" else "Region"} request accepted via ${endpoint.route}. Visible firmware ink is still unverified."
+            record(status + " Rect=" + rect.toShortString())
             true
         } catch (failure: Throwable) {
-            val type = failure.cause?.javaClass?.simpleName ?: failure.javaClass.simpleName
+            val failedAt = lastStage
+            val causes = generateSequence(failure) { it.cause }.take(5).toList()
+            val type = causes.last().javaClass.simpleName
+            record("Failure at: $failedAt")
+            record("Failure types: " + causes.joinToString(" -> ") { it.javaClass.simpleName })
+            // Exception messages may contain private values. Keep only bounded code locations.
+            causes.last().stackTrace.take(6).forEach { frame -> record("Failure frame: $frame") }
             val released = stop()
-            status = "Firmware preview request failed ($type)." + if (released) "" else " Cleanup could not be confirmed."
-            checkpoint(status)
+            status = "Firmware preview failed at $failedAt ($type)." + if (released) "" else " Cleanup could not be confirmed."
+            record(status)
             false
         }
     }
 
     fun stop(): Boolean {
         var released = true
-        val hadRegistration = registered != null
+        val hadRegistration = hasRegistration
+        registeredView?.let { view ->
+            if (runCatching { call("setViewAutoDrawEnabled", view, false) }.isSuccess) registeredView = null
+            else { released = false; record("Owned view release failed; cleanup pending") }
+        }
         registered?.let { rect ->
             if (runCatching { call("removeAutoDrawRect", Rect(rect)) }.isSuccess) registered = null
-            else { released = false; checkpoint("Region release failed") }
+            else { released = false; record("Region release failed") }
         }
         previousTool?.let { old ->
             when (read("getAutoDrawToolType")) {
@@ -115,9 +140,11 @@ class FirmwarePreviewProbe internal constructor(
         }
         if (released) { receiver = null; methods = emptyList() }
         if (!released) status = "Firmware test cleanup could not be confirmed."
-        else if (hadRegistration) status = "Firmware region removed; visible ink was not evaluated automatically."
+        else if (hadRegistration) status = "Firmware scope released; visible ink was not evaluated automatically."
         return released
     }
+
+    private fun record(stage: String) { lastStage = stage; checkpoint(stage) }
 
     private fun read(name: String): Any? = runCatching {
         if (receiver == null) null else find(name, emptyArray())?.invoke(receiver)
@@ -125,9 +152,9 @@ class FirmwarePreviewProbe internal constructor(
 
     private fun call(name: String, vararg args: Any?) {
         val method = find(name, args) ?: throw NoSuchMethodException(name)
-        checkpoint("Calling $name")
+        record("Calling $name")
         check(method.invoke(receiver, *args) != false)
-        checkpoint("Returned from $name")
+        record("Returned from $name")
     }
 
     private fun find(name: String, args: Array<out Any?>): Method? = methods.firstOrNull { method ->
@@ -147,13 +174,26 @@ class FirmwarePreviewProbe internal constructor(
             type.methods.any { it.name == name && it.parameterTypes.contentEquals(arrayOf(Rect::class.java)) }
         }
 
-        private fun connect(className: String, checkpoint: (String) -> Unit): FirmwareEndpoint {
+        private fun hasViewApi(type: Class<*>) = type.methods.any {
+            it.name == "setViewAutoDrawEnabled" && it.parameterTypes.contentEquals(arrayOf(View::class.java, Boolean::class.javaPrimitiveType))
+        }
+
+        private fun connect(context: Context, className: String, hasView: Boolean, checkpoint: (String) -> Unit): FirmwareEndpoint {
             val loader = FirmwarePreviewProbe::class.java.classLoader
-            if (className == "android.os.enote.ENoteSetting") {
+            checkpoint("Inspecting $className without initialization")
+            val wrapper = Class.forName(className, false, loader)
+            // Firmware 3.15.15 exposes the view API but not add/removeAutoDrawRect to this
+            // app. Prefer its actual exposed API over assuming the community Binder surface.
+            val useView = hasView && hasViewApi(wrapper)
+            if (useView) checkpoint("Found setViewAutoDrawEnabled(View, boolean); selecting owned-view route")
+            if (!useView && className == "android.os.enote.ENoteSetting") {
                 try {
                     val apiName = "android.os.enote.IENoteSetting"
                     val api = Class.forName(apiName, false, loader)
-                    check(hasRegionApi(api))
+                    if (!hasRegionApi(api)) {
+                        checkpoint("ROM interface does not expose addAutoDrawRect(Rect) and removeAutoDrawRect(Rect)")
+                        throw UnsupportedOperationException()
+                    }
                     val manager = Class.forName("android.os.ServiceManager", false, loader)
                     val stub = Class.forName(apiName + "\$Stub", false, loader)
                     checkpoint("Calling system service lookup")
@@ -169,12 +209,21 @@ class FirmwarePreviewProbe internal constructor(
                     checkpoint("Typed service unavailable (${failure.cause?.javaClass?.simpleName ?: failure.javaClass.simpleName}); checking wrapper")
                 }
             }
-            val type = Class.forName(className, false, loader)
-            check(hasRegionApi(type))
-            checkpoint("Calling getInstance")
-            val instance = type.getMethod("getInstance").invoke(null) ?: error("No firmware instance")
-            checkpoint("Returned from getInstance")
-            return FirmwareEndpoint(instance, type, "framework wrapper")
+            if (!useView && !hasRegionApi(wrapper)) {
+                checkpoint("Framework scope unavailable: view API=${hasViewApi(wrapper)}; attached view supplied=$hasView; add/remove rect API=${hasRegionApi(wrapper)}")
+                throw UnsupportedOperationException()
+            }
+            checkpoint("Selecting public getInstance(Context) or getInstance()")
+            val contextualFactory = wrapper.methods.firstOrNull {
+                it.name == "getInstance" && Modifier.isStatic(it.modifiers) && it.parameterTypes.contentEquals(arrayOf(Context::class.java))
+            }
+            val factory = contextualFactory ?: wrapper.getMethod("getInstance")
+            val factoryName = if (contextualFactory != null) "getInstance(Context)" else "getInstance()"
+            checkpoint("Calling $factoryName")
+            val instance = (if (contextualFactory != null) factory.invoke(null, context.applicationContext) else factory.invoke(null))
+                ?: error("No firmware instance")
+            checkpoint("Returned from $factoryName")
+            return FirmwareEndpoint(instance, wrapper, if (useView) "framework view API" else "framework wrapper")
         }
 
         /** Class inspection deliberately does not initialize ENote or invoke vendor methods. */
@@ -184,10 +233,10 @@ class FirmwarePreviewProbe internal constructor(
                 runCatching {
                     val type = Class.forName(name, false, FirmwarePreviewProbe::class.java.classLoader)
                     val relevant = type.declaredMethods.filter { method ->
-                        listOf("writing", "draw", "mipi", "input", "region", "render", "pen", "mode", "context", "refresh", "surface", "instance")
+                        listOf("writing", "draw", "mipi", "input", "region", "render", "pen", "mode", "context", "refresh", "surface", "instance", "interface", "binder", "service")
                             .any { method.name.contains(it, ignoreCase = true) }
                     }.sortedBy { it.name + it.parameterTypes.joinToString { p -> p.name } }
-                    name + " (inspection only)\n" + relevant.take(180).joinToString("\n") { method ->
+                    name + " (inspection only; ${type.declaredMethods.size} declared methods; ${type.methods.size} public methods)\n" + relevant.take(180).joinToString("\n") { method ->
                         Modifier.toString(method.modifiers) + " " + method.returnType.simpleName + " " + method.name +
                             method.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.simpleName }
                     }

@@ -1,10 +1,11 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test1 is an investigation build**, not a claimed ink
-fix. The user reports similar problems in 0.3.1 and ForestNote. It adds an isolated
-comparison of ordinary Android drawing and firmware-drawn preview so the next
-backend decision can use evidence from the actual full-size firmware.
+keeps notes offline. **0.3.2-test2 is an investigation build**, not a claimed ink
+fix. The user's 3.15.15 report showed that test1 could not start its preview:
+its assumed rectangle API was not exposed. Test2 uses the reported
+`setViewAutoDrawEnabled(View, boolean)` API on a separate scratchpad, with exact
+failure-stage reporting. Actual full-size preview behavior still needs testing.
 See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 
 ## In this version

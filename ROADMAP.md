@@ -30,7 +30,8 @@ The immediate use case is writing alongside the user's German app.
 - Firmware: **3.15.15**, reported by the user.
 - Android version: **Android 13 / API 33**, confirmed by the user from Fastnotes'
   device details. Verify runtime capabilities before depending on vendor-specific
-  behavior; the exact full-size model/build string has not yet been supplied.
+  behavior. The device report identifies **Viwoods AiPaper**, build **3.15.15**,
+  display **1920×2560** in natural portrait orientation.
 - Pen: original Viwoods pen; the user uses its eraser.
 - Writing hand: right-handed; account for this in control placement and palm
   rejection testing.
@@ -94,6 +95,14 @@ with read-only API inspection and explicit separation between accepted API calls
 and observed live ink. It does not replace the note backend with another unverified
 default. The stock Notes baseline is still pending. Research, evidence limits and
 the next decision are recorded in [the ink investigation](docs/INK_INVESTIGATION.md).
+
+The 0.3.2-test1 device report supplies exact APIs: the rectangle-registration
+methods are not exposed to this app, while `setViewAutoDrawEnabled(View, boolean)`
+and a contextual factory are exposed. The test's local capability check failed
+before vendor initialization, so its result does not measure firmware preview.
+0.3.2-test2 corrects the test to enable its owned scratch view, disable that exact
+view on cleanup, retain explicit failure stages, and keep UI text from resizing
+the active canvas. Physical drawing and split-screen compatibility remain unverified.
 
 ## Later ideas
 

@@ -8,6 +8,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.text.TextUtils
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -64,7 +65,8 @@ class InkTestActivity : Activity() {
         }
         root.addView(HorizontalScrollView(this).apply { addView(controls); isHorizontalScrollBarEnabled = false })
         instructions = TextView(this).apply {
-            text = "Scratch test only; saved sheets are not opened. Use the pen tip. Start with Android pen, then compare Firmware preview."
+            // Keep this text stable: changing its line count would resize the registered canvas.
+            text = "Temporary scratchpad. Compare Android pen and Firmware preview using the pen tip. In firmware mode, look for ink while the pen moves; app ink waits one second after pen-up. Then Copy report."
             textSize = 14f; setTextColor(Color.BLACK); setPadding(dp(16), dp(8), dp(16), dp(8))
         }
         root.addView(instructions)
@@ -76,10 +78,11 @@ class InkTestActivity : Activity() {
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         status = TextView(this).apply {
             text = "Android pen: write a rapid continuous up/down stroke."
-            textSize = 13f; setTextColor(Color.BLACK); minHeight = dp(56)
+            textSize = 13f; setTextColor(Color.BLACK); maxLines = 4; ellipsize = TextUtils.TruncateAt.END
             setPadding(dp(16), dp(8), dp(16), dp(8))
         }
-        root.addView(status)
+        // Status changes must not resize a live firmware region, including in a narrow pane.
+        root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80)))
         setContentView(root)
         paper.viewTreeObserver.addOnPreDrawListener(geometryObserver)
     }
@@ -92,14 +95,12 @@ class InkTestActivity : Activity() {
             return
         }
         paper.mode(false)
-        if (probe.start(rect)) {
+        if (probe.start(rect, paper)) {
             registeredBounds = Rect(rect)
             paper.mode(true)
-            instructions.text = "Look for ink WHILE the pen moves. The app holds back its own ink until one second after pen-up, so delayed ink alone does not prove firmware preview works."
-            status.text = "Firmware region requested; visible drawing is unverified."
+            status.text = "Firmware preview requested. Write, then Copy report. Visible firmware ink is unverified."
         } else {
             status.text = probe.status
-            instructions.text = "The firmware test could not start. Copy report includes API availability and the last completed call. Android pen remains available."
         }
     }
 
@@ -114,7 +115,6 @@ class InkTestActivity : Activity() {
         registeredBounds = null
         if (::paper.isInitialized && paper.firmwareTest) paper.mode(false)
         if (::status.isInitialized) status.text = if (released) message else "Firmware cleanup could not be confirmed. Close this test."
-        if (::instructions.isInitialized) instructions.text = "Scratch test only; saved sheets are not opened. Use the pen tip. Start with Android pen, then compare Firmware preview."
     }
 
     private fun screenBounds(): Rect? {

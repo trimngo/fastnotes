@@ -10,7 +10,9 @@ brief static squares in full-screen portrait. Version 0.2.0 changes that path
 to direct native input. The user's 0.3.0 photos confirmed native callbacks and FAST
 mode, but showed rapid strokes with live gaps that filled after a delay, plus
 Android fallback/slow refresh and a reported exit in landscape split-screen.
-Version 0.3.1 changes refresh pacing and pane startup and needs a fresh hardware check.
+Version 0.3.1 changed refresh pacing and pane startup; the user reports similar
+problems remain. The 0.3.2-test1 report identifies an unsupported API assumption
+in that diagnostic, before it could start firmware preview.
 
 ## First pass
 
@@ -97,7 +99,7 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Separate firmware-preview investigation (0.3.2-test1)
+## Separate firmware-preview investigation (0.3.2-test2)
 
 0.3.1 remains unsatisfactory on the physical device and in ForestNote. Follow the
 [new comparison procedure](INK_INVESTIGATION.md) rather than treating another
@@ -106,3 +108,11 @@ successful build or API return as an ink-performance result. The additional
 normal note renderer. Report whether ink appears while the pen moves in firmware
 mode; app-drawn ink intentionally waits one second after pen-up. Copy report
 captures API signatures, stage results and input timing, without stroke contents.
+
+Test2 uses the view API exposed in the user's actual 3.15.15 report. Choose
+Firmware preview, observe whether complete ink appears while the pen moves,
+then Copy report. An accepted request is still unverified. If it fails, the report
+now identifies the exact stage and root exception type. Test full-screen first,
+then landscape with Chrome on the left; select Firmware preview again after
+switching focus or resizing. The temporary scratch view is explicitly disabled
+on focus loss, pause, resize or exit. Status updates keep its geometry stable.

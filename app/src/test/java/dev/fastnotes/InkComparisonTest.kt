@@ -8,6 +8,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import dev.fastnotes.diagnostics.FirmwareEndpoint
+import dev.fastnotes.diagnostics.FirmwarePreviewProbe
 import dev.fastnotes.diagnostics.InkProbeLog
 import dev.fastnotes.diagnostics.InkTestActivity
 import dev.fastnotes.diagnostics.InkTestView
@@ -86,5 +91,56 @@ class InkComparisonTest {
         assertTrue(report.contains("Stage 99"))
         assertFalse(report.contains("Stage 0 "))
         assertTrue(report.length < 25_000)
+    }
+
+    @Test @Config(qualifiers = "w1200dp-h800dp-land-mdpi")
+    fun ownedPreviewSurvivesStatusUpdatesAndIsReleasedOnFocusLossAndPaneResize() {
+        val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
+        val activity = lifecycle.get()
+        val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        fun descendants(view: View): Sequence<View> = sequence {
+            yield(view)
+            if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+        val view = descendants(root).filterIsInstance<InkTestView>().single()
+        val start = descendants(root).filterIsInstance<Button>().single { it.text == "Firmware preview" }
+        fun layout(width: Int) {
+            root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+            root.layout(600, 0, 600 + width, 800)
+            view.viewTreeObserver.dispatchOnPreDraw()
+        }
+        val fake = ViewFirmwareFake()
+        val probe = FirmwarePreviewProbe(activity, {}) { _, _ ->
+            FirmwareEndpoint(fake, ViewFirmwareFake::class.java, "owned view lifecycle test")
+        }
+        InkTestActivity::class.java.getDeclaredField("probe").apply { isAccessible = true }.set(activity, probe)
+        try {
+            layout(600)
+            val before = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+            start.performClick()
+            assertTrue(probe.status, probe.hasRegistration)
+            assertSame(view, fake.enabledView)
+            assertTrue(view.firmwareTest)
+            stroke(view)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1000))
+            layout(600)
+            assertEquals(before, android.graphics.Rect(view.left, view.top, view.right, view.bottom))
+            assertTrue(probe.hasRegistration)
+            assertEquals(1, fake.calls.size)
+
+            lifecycle.windowFocusChanged(false)
+            assertFalse(probe.hasRegistration)
+            assertNull(fake.enabledView)
+            lifecycle.windowFocusChanged(true)
+            assertFalse(probe.hasRegistration)
+            start.performClick()
+            assertTrue(probe.hasRegistration)
+            layout(360)
+            assertFalse(probe.hasRegistration)
+            assertNull(fake.enabledView)
+            assertFalse(view.firmwareTest)
+            assertEquals(listOf(true, false, true, false), fake.calls.map { it.second })
+        } finally { lifecycle.pause().stop().destroy() }
     }
 }

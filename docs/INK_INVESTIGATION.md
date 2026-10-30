@@ -107,6 +107,56 @@ normal note-editor process as far as Android's process isolation permits.
   The same last-stage evidence is available from normal Device details if the
   test closes. Nothing is uploaded automatically.
 
+## Exact 3.15.15 report and the corrected 0.3.2-test2 experiment
+
+The user's test1 report identifies **Viwoods AiPaper**, Android 13/API 33, build
+3.15.15, target 30, display 1920×2560 at rotation 0, full-screen canvas
+`[0,325][1920,2448]`. It exposes these wrapper methods:
+
+- `setViewAutoDrawEnabled(View, boolean)`
+- `getInstance(Context)` and `getInstance()`
+- `getPictureMode()` / `setPictureMode(int)`
+- `getAutoDrawToolType()` / `setAutoDrawToolType(int)`
+- `setT1000AutoDrawEnabled(boolean)`, without a corresponding exposed getter
+
+It does **not expose** `addAutoDrawRect` / `removeAutoDrawRect` through that
+reflection report. The inspected typed interface also supplies no matching
+region methods. This does not determine whether those methods exist internally
+or are hidden from the application.
+
+Test1 required those rectangle methods and threw its own `IllegalStateException`
+at the capability check, **before `getInstance` or any drawing request**. Its
+failure is a test implementation assumption, not a measurement of firmware ink
+speed or proof that direct preview is impossible. The Android sample event ages
+(43 ms and 110 ms maximum) exclude visible panel latency. The pasted exit entries
+are classified as user/system requests with status 0, not crash or low-memory
+evidence; they do not establish the cause of the earlier reported disappearances.
+
+Test2 prefers the exposed **view API** when an attached scratch view is supplied.
+It uses the contextual factory when available, then requests
+`setViewAutoDrawEnabled(ownedScratchView, true)`. Cleanup calls the same method
+with **the same view and `false`**, including if enabling throws after taking
+effect. That view is newly created and owned entirely by the test; no other
+application's region is changed. Failed cleanup remains pending and blocks
+enabling another view. The older typed/rectangle route remains available only on
+firmware that actually exposes it.
+
+The test still does not explicitly call `initWriting`, register bitmaps, invoke
+`renderWriting`, attach a vendor input callback, guess Binder codes, or change
+global exclusion settings. Unreadable global enable/width settings are left
+untouched. Factory initialization can run vendor internals, which is why the
+scratch activity remains in its separate process. The exact semantics and
+physical behavior of the view API are **unverified**; neither its name nor a
+successful call establishes visible low-latency drawing. A blank result may still
+depend on global firmware configuration that the test has not changed.
+
+Failure reports now identify the last exact stage, root exception types and
+bounded code locations without exception messages. Capability inspection adds
+method counts and Binder/factory signatures. Instructions remain fixed and the
+status area reserves its height, so reporting progress cannot move the registered
+canvas and immediately cancel the test. Real pane/focus changes still stop it.
+The same one-second Android ink holdback and user-observed live-ink test apply.
+
 ## Device experiment and decision
 
 1. Compare the same rapid continuous up/down pattern in stock Notes, full-screen

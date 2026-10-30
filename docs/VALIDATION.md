@@ -1,4 +1,49 @@
-# 0.3.2-test1 firmware-preview investigation validation
+# 0.3.2-test2 actual-firmware view API validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **76 tests passed**, no failures, errors or skips. Lint has no
+errors; debug/release variants compile. Seven added regressions cover:
+
+- The reported 3.15.15 view-only surface, contextual factory selection, enabling
+  the exact owned view and restoring readable settings without changing an
+  unreadable global enable flag.
+- Rejecting a detached view or missing view before vendor initialization.
+- Cleaning up a request rejected after taking effect, exact failure-call/root-type
+  evidence without exception messages, and retrying failed cleanup without
+  enabling a second view.
+- A right-hand-pane activity contract: status updates preserve active canvas
+  geometry; focus loss and real pane resize disable the same view; focus return
+  alone does not restart an experiment.
+
+The user's test1 report demonstrates that its local rectangle-capability check
+failed before any drawing request. Test2 corrects that assumption using
+`setViewAutoDrawEnabled(View, boolean)`, exposed in the actual 3.15.15 report.
+These software checks do **not** establish that this API produces visible ink or
+resolves physical lag/gaps/exits. That hardware comparison is still pending.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test2` (code 6)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- Separate scratch test and delayed Android-ink comparison; normal note backend
+  remains the previous implementation
+- API/failure evidence stays local until Copy report; no saved notes opened by
+  the test and no stroke coordinates written into reports
+- APK bytes: `7888228`
+- APK SHA-256: `53bfc054ec2319c497b029629f4cfc0e408704a039f355d0e5bf90cc388e2111`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [actual-device evidence and the corrected experiment](INK_INVESTIGATION.md).
+
+---
+
+## Earlier 0.3.2-test1 firmware-preview investigation validation
 
 Software checks performed on 30 October 2026:
 
