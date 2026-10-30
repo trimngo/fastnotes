@@ -115,6 +115,15 @@ keeps refreshes inside the visible pane, captures only quiet completed snapshots
 records a user-selected visual result, and offers Updates directly. The normal
 notebook renderer is not replaced pending real-device evidence.
 
+Test3 returned **No live ink** for both pane and display buffers, despite accepted
+native samples and nonzero FAST-mode refresh counts. The user confirmed that
+**built-in Viwoods Notes draws smoothly**. Geometry alone has not enabled live
+ink. An audit found differences from the inspected reference: it renders and
+ends strokes on the pen-callback thread and does not re-enable writing on every
+DOWN. Test4 adds an isolated comparison following that reference sequence and
+records execution thread IDs. The notebook default remains unchanged; physical
+thread-affinity/transaction requirements have not been established.
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

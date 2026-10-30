@@ -1,4 +1,47 @@
-# 0.3.2-test3 native buffer comparison validation
+# 0.3.2-test4 reference callback sequence validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **85 tests passed**, no failures, errors or skips. Lint has no
+errors; debug/release variants compile. Two new reference-policy tests and the
+updated buffer/activity cases verify:
+
+- No presentation scheduler is created for the callback policy. Start, bitmap
+  binding, each dirty-region render and transaction end occur on the actual
+  injected input thread, with no per-DOWN enable transition.
+- Stroke end precedes UI notification; draining/acknowledging cannot end it again.
+- Immediate bitmap presentation, visible-region clipping, outside-input rejection
+  and cancellation restoration remain correct under that policy.
+- Existing quiet frozen-snapshot, buffer placement, stale-callback, observation,
+  focus/resize and direct Updates cases cover the new comparison as well.
+
+The user confirmed no live ink in **both** test3 buffer layouts, while built-in
+Viwoods Notes draws the same pattern smoothly. Test4 addresses concrete execution/
+transaction differences from the inspected reference, rather than treating bigger
+buffers or successful refresh calls as a solution. Its actual visual performance
+is unverified. This is an investigation build, not a claimed latency/crash fix.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test4` (code 8)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- Separate scratchpad offers Worker refresh and Reference callback with full-
+  display buffers, explicit visual results and callback/render/end thread IDs
+- Notebook default stays Worker; scratch edits never reach NoteStore
+- APK bytes: `7840176`
+- APK SHA-256: `2cac21a25a5be99d2b72ffcc15d4b5454b572cc2fcb9795ab0c105dadf7df764`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [negative hardware results and the audited reference sequence](INK_INVESTIGATION.md).
+
+---
+
+## Earlier 0.3.2-test3 native buffer comparison validation
 
 Software checks performed on 30 October 2026:
 

@@ -27,6 +27,8 @@ class FakePanel {
     var background: Bitmap? = null
     var foregroundBounds: Rect? = null
     var nativeOrientation = 0
+    val trace = java.util.Collections.synchronizedList(ArrayList<Pair<String, Long>>())
+    private fun trace(name: String) { trace.add(name to Thread.currentThread().id) }
     var rendered = ArrayList<Rect>()
     var fail = false
     var input: FakeNativeListener? = null
@@ -37,10 +39,11 @@ class FakePanel {
     var renderStarted: CountDownLatch? = null
     var resumeRender: CountDownLatch? = null
     fun setWritingJavaBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) {
+        trace("bitmap")
         foreground = bitmap; foregroundBounds = Rect(x, y, x + bitmap.width, y + bitmap.height); nativeOrientation = rotation
     }
     fun setWritingJavaBackgroundBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { background = bitmap }
-    fun setWritingEnabled(value: Boolean) { enabled = value }
+    fun setWritingEnabled(value: Boolean) { trace("enable=$value"); enabled = value }
     fun setWritingInputlistener(listener: FakeNativeListener?) {
         input = listener
         if (listener != null) listenerBindings++
@@ -48,13 +51,14 @@ class FakePanel {
     fun setWritingInputJumpPointCount(value: Int) {}
     fun setRenderWritingDelayCount(value: Int) {}
     fun renderWriting(rect: Rect) {
+        trace("render")
         renderStarted?.countDown()
         check(resumeRender?.await(5, TimeUnit.SECONDS) != false)
         check(!fail)
         rendered.add(Rect(rect))
     }
-    fun onWritingStart() { starts++ }
-    fun onWritingEnd() { ends++ }
+    fun onWritingStart() { trace("start"); starts++ }
+    fun onWritingEnd() { trace("end"); ends++ }
     fun releaseWritingJavaBitmap() { foreground = null }
     fun releaseWritingJavaBackgroundBitmap() { background = null }
     fun emit(action: Int, x: Int, y: Int, tool: Int = 2, pressure: Int = 1024, buttons: Int = 0) {
@@ -64,7 +68,7 @@ class FakePanel {
         enabled = false; foreground = null; background = null; foregroundBounds = null; nativeOrientation = 0; rendered.clear()
         fail = false; input = null; starts = 0; ends = 0; pictureMode = 3
         renderStarted = null; resumeRender = null
-        listenerBindings = 0
+        listenerBindings = 0; trace.clear()
     }
     companion object {
         private val singleton = FakePanel()

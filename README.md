@@ -1,12 +1,12 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test3 is an investigation build**, not a claimed ink
-fix. The user's test2 call completed but produced no live ink; only the delayed
-Android fallback appeared. Test3 compares **Native pane** and **Native display**:
-the same native controller with pane-sized versus full-display buffers. It also
-records the user's visual result and provides a direct **Updates** button in the
-scratch test. Actual full-size performance remains unverified.
+keeps notes offline. **0.3.2-test4 is an investigation build**, not a claimed ink
+fix. The user reports no live ink in either test3 buffer layout, while built-in
+Viwoods Notes draws smoothly. Test4 compares **Worker refresh** and **Reference
+callback**, both with full-display buffers. The latter presents and ends strokes
+on the pen-callback thread and follows the inspected reference transaction order.
+Actual full-size performance remains unverified.
 See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 
 ## In this version
@@ -39,7 +39,7 @@ See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 - Device details includes native startup/visibility/timing diagnostics and private
   crash/Android process-exit evidence without note contents or exception messages.
 - **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
-  process. It compares Android pen, Native pane and Native display, with native
+  process. It compares Android pen, Worker refresh and Reference callback, with native
   refresh requests clipped to the visible scratchpad. App-drawn native snapshots
   wait one second after pen-up. Choose **Smooth**, **Gaps / lag** or **No live ink**
   before Copy report. **Updates** is directly accessible from this screen.

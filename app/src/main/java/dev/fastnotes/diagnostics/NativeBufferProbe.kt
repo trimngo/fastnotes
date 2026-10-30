@@ -8,18 +8,23 @@ import android.os.Handler
 import android.os.Looper
 import dev.fastnotes.ink.PaperRasterizer
 import dev.fastnotes.ink.ViwoodsPanel
+import dev.fastnotes.ink.NativeRefreshPolicy
 import dev.fastnotes.model.Note
 import dev.fastnotes.model.Viewport
 
-enum class NativeBufferMode(val label: String) { PANE("Native pane"), DISPLAY("Native display") }
+enum class NativeBufferMode(val label: String) {
+    PANE("Native pane"), DISPLAY("Worker refresh"), REFERENCE_CALLBACK("Reference callback")
+}
 
-/** Temporary A/B test. The existing native controller, input and refresh policy are identical. */
+/** Temporary geometry/execution comparisons; live performance requires a user observation. */
 class NativeBufferProbe internal constructor(
     private val context: Context,
     private val checkpoint: (String) -> Unit,
-    private val panelFactory: () -> ViwoodsPanel
+    private val panelFactory: (NativeBufferMode) -> ViwoodsPanel
 ) {
-    constructor(context: Context, checkpoint: (String) -> Unit = {}) : this(context, checkpoint, { ViwoodsPanel() })
+    constructor(context: Context, checkpoint: (String) -> Unit = {}) : this(context, checkpoint, { mode ->
+        ViwoodsPanel(policy = if (mode == NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER)
+    })
     private val main = Handler(Looper.getMainLooper())
     private var panel: ViwoodsPanel? = null
     private var canvasBounds = Rect()
@@ -46,7 +51,7 @@ class NativeBufferProbe internal constructor(
             this.mode = mode
             canvasBounds = Rect(canvas)
             visibleBounds = Rect(visible)
-            bufferBounds = Rect(if (mode == NativeBufferMode.DISPLAY) display else canvas)
+            bufferBounds = Rect(if (mode != NativeBufferMode.PANE) display else canvas)
             panelDirection = orientation
             val width = bufferBounds.width()
             val height = bufferBounds.height()
@@ -58,7 +63,7 @@ class NativeBufferProbe internal constructor(
                 lineSpacing = 48f * context.resources.displayMetrics.density,
                 scrollY = (bufferBounds.top - canvas.top).toFloat())
             PaperRasterizer().page(Canvas(source), note, Viewport(note.pageWidth, width, height, note.scrollY))
-            val engine = panelFactory()
+            val engine = panelFactory(mode)
             panel = engine
             engine.onEditsAvailable = {
                 // No file IO or View access on the firmware callback thread; no scratch edits
@@ -110,6 +115,7 @@ class NativeBufferProbe internal constructor(
         append("; visible ${visibleBounds.toShortString()}; orientation $panelDirection\n")
         append("active=${engine.active}; pen down=${engine.penDown}; native callbacks=${engine.rawEventCount}; accepted=${engine.sampleCount}; refreshes=${engine.renderCount}\n")
         append("Picture mode=${engine.lastActiveMode}; longest refresh call=${engine.maxRenderMicros} us; last call=${engine.failureStage}\n")
+        append("Policy=${engine.refreshPolicy}; callback thread=${engine.lastCallbackThread}; render thread=${engine.lastRenderThread}; stroke-end thread=${engine.lastEndThread}\n")
         append("${engine.status}. Call timing excludes visible panel latency.")
     } } ?: lastDetails
 

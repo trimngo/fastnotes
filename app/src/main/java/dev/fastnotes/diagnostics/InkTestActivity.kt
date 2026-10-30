@@ -76,10 +76,10 @@ class InkTestActivity : Activity() {
         })
         row("Android pen" to {
             stopTest("Android pen: write with the pen tip."); modeLabel = "Android pen"; resetObservation()
-        }, "Native pane" to { startNativeTest(NativeBufferMode.PANE) }, "Native display" to { startNativeTest(NativeBufferMode.DISPLAY) })
+        }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) }, "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. Compare Native pane and Native display with the same fast pen strokes. In native modes, app ink waits one second after pen-up. Then choose what you saw while writing and Copy report."
+            text = "Temporary scratchpad. Compare Worker refresh and Reference callback with the same fast pen strokes. Both use full-display buffers. App ink waits one second after pen-up. Record what you saw while writing, then Copy report."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -133,7 +133,7 @@ class InkTestActivity : Activity() {
         if (!::nativeProbe.isInitialized) return
         if (::paper.isInitialized && (paper.samples > 0 || nativeProbe.active || nativeProbe.samples > 0)) {
             val summary = stats() + "; user observed: $observed" +
-                if (modeLabel.startsWith("Native")) "\n" + nativeProbe.details() else ""
+                if (nativeProbe.active || nativeProbe.samples > 0) "\n" + nativeProbe.details() else ""
             if (runs.lastOrNull() != summary) runs.addLast(summary)
             while (runs.size > 8) runs.removeFirst()
             log.event(summary)

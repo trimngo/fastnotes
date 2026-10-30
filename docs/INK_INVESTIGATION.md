@@ -59,7 +59,8 @@ pages were read directly. No newer exact firmware fix or official SDK was verifi
 | --- | --- | --- |
 | ENote callbacks plus Java bitmap blits | Active on the user's tablet; 0.3.1 remains unsatisfactory | Keep as historical baseline; stop adjusting timing without new evidence |
 | System-drawn preview plus separately captured Android strokes | Test2's view API returned on 3.15.15; user observed no live ink | Record the negative result for this configuration; global enable remains unreadable/unchanged |
-| Full-display native buffers, motivated by WiNote's geometry | Display-sized buffers/origin-zero background observed in stock-app code | Test3 compares pane and display buffer placement with the same callback/refresh controller |
+| Full-display native buffers, motivated by WiNote's geometry | Test3 produced No live ink with both layouts | Geometry alone did not enable presentation in this test |
+| Reference callback/transaction sequence | Inspected SDK presents/ends on the callback thread without a per-DOWN enable call | Test4 compares that sequence with the paced worker, using full-display buffers |
 | Vendor-supported API or per-app optimization | Community research describes vendor app-specific optimization; no contract verified for Fastnotes | Prepare a precise vendor request using device/API/test evidence |
 | New ordinary Canvas/GPU/C++ renderer | Does not by itself establish access to a different e-ink presentation path | Do not present a language/library replacement as a solution to unmeasured panel behavior |
 | Privileged/system-app or firmware changes | Some stock-app modification projects use this access | Not part of the current diagnostic experiment |
@@ -208,21 +209,75 @@ Copy report includes that observation per comparison, buffer dimensions/origin,
 clipped screen bounds, raw/accepted native counts, refresh counts/mode and call
 timing. These counters still exclude visible panel latency.
 
+## Test3 result and the reference-sequence audit
+
+The report identifies full-screen portrait, display 1920×2560 and visible canvas
+`[0,549][1920,2400]`. Both comparisons ended with the user's **No live ink** result:
+
+| Buffer layout | Native callbacks | Accepted samples | Refresh calls | Mode | Longest refresh call |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Pane 1920×1851 at (0,549) | 5,179 | 4,220 | 2,105 | FAST 4 | 129,467 µs |
+| Display 1920×2560 at (0,0) | 3,008 | 2,149 | 1,081 | FAST 4 | 105,470 µs |
+
+Android maximum event ages were 31 ms and 10 ms. The timings are delivery/call
+measurements, not visible panel latency. The stage log includes intermediate
+radio choices; the final result/earlier-run summary both say No live ink. Shared
+exit entries still show user/system requests with status 0 rather than a
+crash/low-memory classification.
+
+The user separately confirmed that **built-in Viwoods Notes draws smoothly** for
+the same rapid pattern. The device can draw smoothly through its built-in route.
+This narrows the issue to third-party integration/behavior without establishing
+a specific cause or a firmware defect. Buffer geometry alone did not enable live
+presentation. The stock Notes baseline and test3 result are no longer pending;
+the desired landscape split-screen behavior still needs physical verification.
+
+The audit found a concrete mismatch with the inspected
+[`ViwoodsInkController.onNativeInput`](https://github.com/jdkruzr/vw_ink_sdk_unofficial/blob/f6060bde8e3cd6f090e1df760733ecd5a843f5cc/viwoods-ink/src/main/java/io/github/vwunofficial/ink/ViwoodsInkController.java):
+
+- The reference calls `onWritingStart`, registers its bitmap, paints/presents
+  from the input callback and calls `onWritingEnd` in that callback on UP/cancel.
+- It enables writing at startup, without re-enabling writing on every DOWN.
+- Fastnotes' current worker policy presents on a separate thread, re-enables on
+  DOWN and waits for UI acknowledgement before ending the transaction.
+- The inspected reference has no explicit `initWriting` call. Method presence
+  alone does not establish that an extra initializer is needed.
+
+These differences are hypotheses, not a verified thread-affinity contract. The
+older synchronous 0.3.0 route also had problems, so callback rendering alone is
+not a proven solution; that code also re-enabled on DOWN and batched differently.
+
+## Test4: callback sequence versus worker
+
+The scratchpad now offers **Worker refresh** and **Reference callback**, both
+using full-display buffers at (0,0), the same visible-pane clipping and quiet
+frozen Android snapshots. Worker is the previous paced control. Reference
+presents every accepted dirty region on the callback thread, creates no
+presentation worker, omits the per-DOWN enable transition and ends the transaction
+in the callback before notifying the UI. UI acknowledgement cannot end it again.
+
+This compares a bundle of reference execution/transaction choices; it does not
+isolate thread, batching and enable order as individual causes. The notebook
+default remains Worker. The independently written implementation bundles no
+third-party/vendor binary. Reports identify policy and callback/render/end thread
+IDs to verify actual execution on the ROM, while retaining the user's explicit
+visual result. Method success still does not establish visible low-latency ink.
+
 ## Device experiment and decision
 
-1. Compare the same rapid continuous up/down pattern in stock Notes, full-screen
-   and in the desired landscape layout. This baseline question is still pending.
-2. Open **Fastnotes Ink Test**. Select **Native pane**, draw the rapid pattern,
-   then choose the observed result. Select **Native display**, repeat and choose
+1. Built-in Notes is confirmed smooth for the rapid pattern. Compare its desired
+   landscape split-screen layout as needed when validating a working candidate.
+2. Open **Fastnotes Ink Test**. Select **Worker refresh**, draw the rapid pattern,
+   then choose the observed result. Select **Reference callback**, repeat and choose
    its result, then **Copy report**. Observe ink while the pen moves. A complete
    image appearing only after the one-second quiet snapshot is not live ink.
 3. Repeat with Chrome left/test right in landscape, selecting the native test
    again after focus/layout changes. Use **Updates** for subsequent app updates.
-4. If display buffers clearly improve live ink, integrate that placement into real
-   notes with verified eraser/scroll/resize/handoff behavior. If both native modes
-   remain poor, use their concrete geometry/counts and a stock Notes comparison
-   to seek the vendor's supported native integration. Further timing-only builds
-   are not justified by the current evidence.
+4. If the reference policy improves live ink, verify eraser/scroll/resize/handoff
+   before integrating it. If it also produces no live ink, obtain the exact
+   full-size firmware implementation or vendor-supported integration to resolve
+   the missing presentation contract. More timing or geometry variations alone
+   are not justified by this evidence.
 
 A [technical vendor request](VIWOODS_SUPPORT_REQUEST.md) is prepared from the
 confirmed evidence and unresolved API contracts. It has not been sent.

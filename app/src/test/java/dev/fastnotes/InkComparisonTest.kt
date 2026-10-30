@@ -18,6 +18,7 @@ import dev.fastnotes.diagnostics.InkProbeLog
 import dev.fastnotes.diagnostics.InkTestActivity
 import dev.fastnotes.diagnostics.InkTestView
 import dev.fastnotes.ink.ViwoodsPanel
+import dev.fastnotes.ink.NativeRefreshPolicy
 import dev.fastnotes.model.Note
 import org.junit.Assert.*
 import org.junit.Test
@@ -107,7 +108,7 @@ class InkComparisonTest {
             if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
         }
         val view = descendants(root).filterIsInstance<InkTestView>().single()
-        val start = descendants(root).filterIsInstance<Button>().single { it.text == "Native display" }
+        val start = descendants(root).filterIsInstance<Button>().single { it.text == "Reference callback" }
         val noInk = descendants(root).filterIsInstance<RadioButton>().single { it.text == "No live ink" }
         val copy = descendants(root).filterIsInstance<Button>().single { it.text == "Copy report" }
         fun layout(width: Int) {
@@ -117,8 +118,9 @@ class InkComparisonTest {
             view.viewTreeObserver.dispatchOnPreDraw()
         }
         val fake = FakePanel.getInstance().apply { reset() }
-        val probe = NativeBufferProbe(activity, {}) {
-            ViwoodsPanel(FakePanel::class.java.name) { ManualNativeInkScheduler() }
+        val probe = NativeBufferProbe(activity, {}) { mode ->
+            val policy = if (mode == dev.fastnotes.diagnostics.NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER
+            ViwoodsPanel(FakePanel::class.java.name, policy) { ManualNativeInkScheduler() }
         }.apply { onStrokeFinished = { view.nativeStrokeFinished() } }
         InkTestActivity::class.java.getDeclaredField("nativeProbe").apply { isAccessible = true }.set(activity, probe)
         try {
@@ -137,7 +139,7 @@ class InkComparisonTest {
             copy.performClick()
             val report = activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
             assertTrue(report.contains("User observed ink while moving: No live ink"))
-            assertTrue(report.contains("Native display: 1200x800 at 0,0"))
+            assertTrue(report.contains("Reference callback: 1200x800 at 0,0"))
 
             lifecycle.windowFocusChanged(false)
             assertFalse(probe.active)

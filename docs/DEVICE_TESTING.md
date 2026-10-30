@@ -99,17 +99,19 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Separate native buffer comparison (0.3.2-test3)
+## Separate reference-sequence comparison (0.3.2-test4)
 
 0.3.1 remains unsatisfactory on the physical device and in ForestNote. Test2's
 view request returned, but the user observed ink only after lifting the pen and
 waiting: only the Android fallback was seen. See [actual evidence and the buffer
-experiment](INK_INVESTIGATION.md).
+experiment](INK_INVESTIGATION.md). Test3 also produced no live ink with either
+buffer layout. Built-in Viwoods Notes draws smoothly. Test4 compares the reference
+callback sequence with the existing worker policy, both with display buffers.
 
-1. Open **Fastnotes Ink Test** directly. Use **Native pane** for the same rapid
+1. Open **Fastnotes Ink Test** directly. Use **Worker refresh** for the same rapid
    up/down pattern. After writing, choose **Smooth**, **Gaps / lag**, or **No live
    ink** according to what appeared while the pen moved.
-2. Select **Native display**, repeat the same pattern and choose its result.
+2. Select **Reference callback**, repeat the same pattern and choose its result.
    App snapshots are intentionally held until one second after pen-up in both
    modes. Delayed completion alone is not live native drawing.
 3. Tap **Copy report**. Both comparisons, geometry, native counts and selected

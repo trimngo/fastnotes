@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import dev.fastnotes.diagnostics.NativeBufferMode
 import dev.fastnotes.diagnostics.NativeBufferProbe
 import dev.fastnotes.ink.ViwoodsPanel
+import dev.fastnotes.ink.NativeRefreshPolicy
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -36,9 +37,10 @@ class NativeBufferProbeTest {
 
     @Before fun setup() {
         fake = FakePanel.getInstance().apply { reset() }
-        probe = NativeBufferProbe(context, {}) {
+        probe = NativeBufferProbe(context, {}) { mode ->
             factories++
-            ViwoodsPanel(FakePanel::class.java.name) { ManualNativeInkScheduler().also { scheduler = it } }
+            val policy = if (mode == NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER
+            ViwoodsPanel(FakePanel::class.java.name, policy) { ManualNativeInkScheduler().also { scheduler = it } }
         }
     }
     @After fun cleanup() { probe.stop() }
@@ -47,7 +49,7 @@ class NativeBufferProbeTest {
         for (mode in NativeBufferMode.entries) {
             probe.stop(); fake.reset()
             assertTrue(probe.start(mode, canvas, visible, display, 2))
-            assertEquals(if (mode == NativeBufferMode.DISPLAY) display else canvas, fake.foregroundBounds)
+            assertEquals(if (mode != NativeBufferMode.PANE) display else canvas, fake.foregroundBounds)
             assertEquals(2, fake.nativeOrientation)
             fake.emit(MotionEvent.ACTION_DOWN, 610, 110) // in the canvas, outside its visible clip
             assertEquals(0, fake.starts)
@@ -55,7 +57,7 @@ class NativeBufferProbeTest {
             fake.emit(MotionEvent.ACTION_MOVE, 800, 353)
             fake.emit(MotionEvent.ACTION_UP, 850, 403)
             shadowOf(Looper.getMainLooper()).idle()
-            scheduler.runUntilIdle()
+            if (mode != NativeBufferMode.REFERENCE_CALLBACK) scheduler.runUntilIdle()
             assertEquals(3, probe.samples)
             assertTrue(fake.rendered.isNotEmpty())
             assertTrue(fake.rendered.all(visible::contains))

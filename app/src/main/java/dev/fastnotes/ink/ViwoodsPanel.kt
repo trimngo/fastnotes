@@ -16,6 +16,8 @@ sealed interface NativeEdit {
     data class Erase(val ids: Set<Long>) : NativeEdit
 }
 
+enum class NativeRefreshPolicy { WORKER, REFERENCE_CALLBACK }
+
 /**
  * Independent implementation of the direct ENote callback protocol researched in ForestNote.
  * The callback thread owns its bitmap; the UI receives immutable completed edits, never points.
@@ -25,7 +27,12 @@ class ViwoodsPanel internal constructor(
     private val className: String,
     private val schedulerFactory: () -> NativeInkScheduler
 ) {
-    constructor(className: String = "android.os.enote.ENoteSetting") : this(className, { HandlerNativeInkScheduler() })
+    constructor(className: String = "android.os.enote.ENoteSetting", policy: NativeRefreshPolicy = NativeRefreshPolicy.WORKER) :
+        this(className, { HandlerNativeInkScheduler() }) { refreshPolicy = policy }
+    internal constructor(className: String, policy: NativeRefreshPolicy, schedulerFactory: () -> NativeInkScheduler) :
+        this(className, schedulerFactory) { refreshPolicy = policy }
+    var refreshPolicy = NativeRefreshPolicy.WORKER
+        private set
 
     private val lock = Any()
     // Never acquire lock while holding firmwareLock: a slow native render must not block MOVE.
@@ -90,6 +97,12 @@ class ViwoodsPanel internal constructor(
         private set
     @Volatile var failureStage = ""
         private set
+    @Volatile var lastCallbackThread = 0L
+        private set
+    @Volatile var lastRenderThread = 0L
+        private set
+    @Volatile var lastEndThread = 0L
+        private set
 
     fun availabilityReport(): String = try {
         val type = Class.forName(className, false, javaClass.classLoader)
@@ -136,8 +149,8 @@ class ViwoodsPanel internal constructor(
                 refreshInFlight = false; handoffRequested = false
                 generation++
                 val epoch = generation
-                scheduler = schedulerFactory()
-                refreshTask = Runnable { refresh(epoch) }
+                scheduler = if (refreshPolicy == NativeRefreshPolicy.WORKER) schedulerFactory() else null
+                refreshTask = if (scheduler != null) Runnable { refresh(epoch) } else null
             }
             optional("setApplicationContext", context.applicationContext)
             previousMode = optional("getPictureMode") as? Int
@@ -180,6 +193,7 @@ class ViwoodsPanel internal constructor(
         try {
             synchronized(lock) {
                 if (!active || generation != epoch) return
+                lastCallbackThread = Thread.currentThread().id
                 rawEventCount++
                 val type = (args[4] as? Number)?.toInt() ?: return
                 if (type != MotionEvent.TOOL_TYPE_STYLUS && type != MotionEvent.TOOL_TYPE_ERASER) return
@@ -204,7 +218,7 @@ class ViwoodsPanel internal constructor(
                             buttons and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY) != 0
                         points.clear(); pieces.clear(); erased.clear()
                         call("onWritingStart")
-                        call("setWritingEnabled", true)
+                        if (refreshPolicy == NativeRefreshPolicy.WORKER) call("setWritingEnabled", true)
                         call("setWritingJavaBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
                         append(x, y)
                     }
@@ -269,6 +283,19 @@ class ViwoodsPanel internal constructor(
     private fun queueRender(local: Rect) {
         val clipped = Rect(local)
         if (!clipped.intersect(visibleLocal)) return
+        if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK) {
+            strokeDamage.union(clipped)
+            // Follow the inspected SDK's callback topology: paint, present and later end the
+            // transaction on this callback thread, without an extra writing-enable transition.
+            displayCanvas!!.drawBitmap(frame!!, clipped, clipped, null)
+            val screen = Rect(clipped).apply { offset(screenBounds.left, screenBounds.top) }
+            val started = System.nanoTime()
+            lastRenderThread = Thread.currentThread().id
+            call("renderWriting", screen)
+            renderCount++
+            maxRenderMicros = max(maxRenderMicros, (System.nanoTime() - started) / 1000)
+            return
+        }
         dirty.union(clipped)
         strokeDamage.union(clipped)
         scheduleRefresh()
@@ -321,7 +348,7 @@ class ViwoodsPanel internal constructor(
             val started = System.nanoTime()
             val rendered = synchronized(firmwareLock) {
                 if (!active || generation != epoch) false
-                else { call("renderWriting", screen); true }
+                else { lastRenderThread = Thread.currentThread().id; call("renderWriting", screen); true }
             }
             val duration = (System.nanoTime() - started) / 1000
             synchronized(lock) {
@@ -363,13 +390,17 @@ class ViwoodsPanel internal constructor(
                 edits.add(NativeEdit.Add(all))
             }
         }
-        if (!strokeDamage.isEmpty) {
+        if (refreshPolicy == NativeRefreshPolicy.WORKER && !strokeDamage.isEmpty) {
             finalDamage.union(strokeDamage)
             finalRefreshAt = min(finalRefreshAt, (scheduler?.now() ?: 0) + SETTLE_MS)
             scheduleRefresh()
         }
         points.clear(); pieces.clear(); erased.clear()
-        waitingForHandoff = true
+        waitingForHandoff = refreshPolicy == NativeRefreshPolicy.WORKER
+        if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK) {
+            lastEndThread = Thread.currentThread().id
+            call("onWritingEnd")
+        }
         onEditsAvailable?.invoke()
     }
 
@@ -391,6 +422,7 @@ class ViwoodsPanel internal constructor(
             handoffRequested = false
             try {
                 call("setWritingJavaBackgroundBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
+                lastEndThread = Thread.currentThread().id
                 call("onWritingEnd")
             } catch (_: Throwable) {
                 status = "Native handoff failed at " + failureStage
