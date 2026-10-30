@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.os.Build
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.graphics.lowlatency.LowLatencyCanvasView
 import androidx.annotation.AnyThread
@@ -35,6 +36,16 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     private val front = LowLatencyCanvasView(context)
     private var panelFailed = false
     private var nativeFailureReason = ""
+    private val hasNativeApi by lazy { panel.available() }
+    private data class NativeGeometry(val width: Int, val height: Int, val x: Int, val y: Int,
+        val orientation: Int, val tool: Tool, val noteId: String, val scrollY: Float, val clip: Rect)
+    private var activeGeometry: NativeGeometry? = null
+    private var lastAttemptGeometry: NativeGeometry? = null
+    private var lastStartReport = "No native start attempted"
+    private var pauseReason = "Waiting for the editor window"
+    private var lastEngineLabel = ""
+    private val refreshEngineTask = Runnable { refreshEngine() }
+    private val beforeDraw = ViewTreeObserver.OnPreDrawListener { refreshEngine(); true }
     private var drainingNative = false
     private val heldAndroidEvents = ArrayList<MotionEvent>()
     private var heldDownTime = Long.MAX_VALUE
@@ -130,6 +141,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
 
     fun setEnvironment(resumed: Boolean, modal: Boolean, multiWindow: Boolean) {
+        if (resumed && !foreground) panelFailed = false
         foreground = resumed
         obscured = modal
         this.multiWindow = multiWindow
@@ -137,18 +149,26 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         refreshEngine()
     }
 
-    val panelAvailable get() = panel.available()
+    val panelAvailable get() = hasNativeApi
     val nativeDiagnostics get() = panel.status + "\nNative callbacks: " + panel.rawEventCount +
         " · accepted samples: " + panel.sampleCount + " · panel updates: " + panel.renderCount +
         "\nLast native picture mode: " + panel.lastActiveMode + " (4 = FAST)" +
+        "\nNative refresh: 8 ms pacing, 32 ms coverage" +
+        "\nLongest native refresh call: " + String.format(java.util.Locale.ROOT, "%.1f ms", panel.maxRenderMicros / 1000.0) +
+        "\nLast native start: " + lastStartReport +
+        "\nEditor: ${width}×${height}; split-screen: $multiWindow; focused: ${hasWindowFocus()}" +
         if (nativeFailureReason.isBlank()) "" else "\nFallback: " + nativeFailureReason
     val nativeActive get() = panel.active
+    val engineLabel get() = when {
+        panel.active -> "Viwoods native"
+        panelWanted && hasNativeApi && !panelFailed && tool != Tool.MOVE -> "Fast ink paused"
+        else -> "Android ink"
+    }
     val engineDescription: String get() = when {
         panel.active -> "Viwoods direct pen input"
         panelFailed -> "Android ink · " + nativeFailureReason
         panelWanted && !panelAvailable -> "Android ink · native callback API unavailable"
-        panelWanted && tool != Tool.MOVE && (!foreground || obscured || !hasWindowFocus()) ->
-            "Viwoods native ink paused for dialog or background"
+        panelWanted && tool != Tool.MOVE -> "Viwoods native ink paused: " + pauseReason
         front.visibility == View.VISIBLE -> "Android front-buffer ink"
         else -> "Android compatibility ink"
     }
@@ -174,46 +194,97 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        panelFailed = false
         stopNative()
         finishGesture(false)
         super.onSizeChanged(w, h, oldw, oldh)
         rebuild()
-        post { refreshEngine() }
+        requestEngineRefresh()
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        if (hasWindowFocus) panelFailed = false
         if (!hasWindowFocus) finishGesture(false)
         super.onWindowFocusChanged(hasWindowFocus)
         refreshEngine()
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(refreshEngineTask)
+        viewTreeObserver.removeOnPreDrawListener(beforeDraw)
         finishGesture(false)
         stopNative()
         super.onDetachedFromWindow()
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnPreDrawListener(beforeDraw)
+        requestEngineRefresh()
+    }
+
+    private fun requestEngineRefresh() {
+        removeCallbacks(refreshEngineTask)
+        post(refreshEngineTask)
+    }
+
     private fun refreshEngine() {
-        stopNative()
         val image = bitmap
-        if (editor != null && panelWanted && !panelFailed && tool != Tool.MOVE && foreground && !obscured && hasWindowFocus() &&
-            image != null && image.width == width && image.height == height) {
+        val visible = Rect()
+        pauseReason = when {
+            !isAttachedToWindow -> "editor is not attached"
+            !foreground -> "app is in the background"
+            obscured -> "a dialog is open"
+            !hasWindowFocus() -> "tap Fastnotes to focus this pane"
+            editor == null || image == null || image.width != width || image.height != height -> "waiting for layout"
+            !getLocalVisibleRect(visible) || !visible.intersect(0, 0, width, height) -> "editor is not visible"
+            else -> ""
+        }
+        var geometry: NativeGeometry? = null
+        if (pauseReason.isEmpty() && panelWanted && tool != Tool.MOVE && hasNativeApi) {
             val location = IntArray(2)
             getLocationOnScreen(location)
-            val visible = Rect()
-            if (getGlobalVisibleRect(visible) && visible.width() == width && visible.height() == height) {
-                val started = panel.start(context, image, editor!!.note, location[0], location[1],
-                    resources.configuration.orientation, tool == Tool.ERASER)
-                if (!started && panel.available()) {
-                    panelFailed = true
-                    nativeFailureReason = panel.status
-                }
+            val panelDirection = display?.let { screen ->
+                val mode = screen.mode
+                panelOrientation(mode.physicalWidth, mode.physicalHeight, screen.rotation)
+            } ?: resources.configuration.orientation
+            geometry = NativeGeometry(width, height, location[0], location[1],
+                panelDirection, tool, editor!!.note.id, editor!!.note.scrollY, Rect(visible))
+            if (panel.active && geometry == activeGeometry) return
+            // A failed attempt during one transient layout must not disable a later stable pane.
+            if (geometry != lastAttemptGeometry) panelFailed = false
+        }
+        if (!panel.active && (geometry == null || panelFailed) && activeGeometry == null &&
+            front.visibility == (if (frontEnabled && isHardwareAccelerated) View.VISIBLE else View.GONE)) {
+            notifyEngineChanged()
+            return
+        }
+        stopNative()
+        if (geometry != null && !panelFailed) {
+            lastAttemptGeometry = geometry
+            val started = panel.start(context, image!!, editor!!.note, geometry.x, geometry.y,
+                geometry.orientation, tool == Tool.ERASER, geometry.clip)
+            lastStartReport = "${geometry.width}×${geometry.height} at ${geometry.x},${geometry.y}; " +
+                "visible ${geometry.clip.toShortString()}; panel orientation ${geometry.orientation}, " +
+                "pane orientation ${resources.configuration.orientation}; " + panel.status
+            if (started) activeGeometry = geometry
+            else {
+                panelFailed = true
+                nativeFailureReason = panel.status
             }
         }
         front.visibility = if (frontEnabled && isHardwareAccelerated && !panel.active) View.VISIBLE else View.GONE
         classic.visibility = if (front.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
         presentScene()
-        onEngineChanged?.invoke()
+        notifyEngineChanged()
+    }
+
+    private fun notifyEngineChanged() {
+        val label = engineLabel
+        if (label != lastEngineLabel) {
+            lastEngineLabel = label
+            onEngineChanged?.invoke()
+        }
     }
 
     private fun rebuild(restartNative: Boolean = true) {
@@ -235,7 +306,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
             if (!gestureEraser) for (piece in pieces) raster.stroke(canvas, piece, note.penWidth, view)
         }
         if (panel.active) classic.invalidate() else presentScene()
-        if (restartNative && (wasPanel || panelWanted)) post { refreshEngine() }
+        if (restartNative && (wasPanel || panelWanted)) requestEngineRefresh()
     }
 
     @AnyThread
@@ -259,7 +330,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
 
     private fun presentScene() {
         classic.invalidate()
-        if (front.visibility == View.VISIBLE) {
+        if (isAttachedToWindow && front.visibility == View.VISIBLE) {
             // commit() only hands off the current hardware buffer; it does not redraw it.
             // Explicitly render the current canonical bitmap before handing it to HWUI.
             synchronized(lock) { redrawFront = true; pending.clear() }
@@ -468,12 +539,13 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
                 rebuild(restartNative = false)
             }
             panel.acknowledge()
-            if (completed.isNotEmpty()) onEngineChanged?.invoke()
+            if (completed.isNotEmpty()) notifyEngineChanged()
         } finally { drainingNative = false }
     }
 
     private fun stopNative() {
         panel.stop()
+        activeGeometry = null
         drainNative()
         clearHeldEvents()
     }

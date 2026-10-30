@@ -35,7 +35,7 @@ class UpdateTest {
     private val app get() = RuntimeEnvironment.getApplication() as FastnotesApp
     private val controllers = ArrayList<UpdateController>()
     private val payload = "An APK payload used only by the transport contract fake".toByteArray()
-    private val release = UpdateRelease("v0.4.0-dev.1", "0.4.0", 4, 29, "fastnotes-v0.4.0-dev.1.apk",
+    private val release = UpdateRelease("v0.4.0-dev.1", "0.4.0", BuildConfig.VERSION_CODE + 1L, 29, "fastnotes-v0.4.0-dev.1.apk",
         payload.size.toLong(), MessageDigest.getInstance("SHA-256").digest(payload).hex())
 
     private class FakeTransport : UpdateTransport {
@@ -90,7 +90,7 @@ class UpdateTest {
 
     @Test fun versionCodePreventsDowngradesAndSameVersionUpdates() {
         val source = transport(listing())
-        assertNull(ReleaseClient(source).latest(4, 33))
+        assertNull(ReleaseClient(source).latest(release.versionCode, 33))
         assertNull(ReleaseClient(source).latest(99, 33))
     }
 
@@ -214,15 +214,15 @@ class UpdateTest {
     }
 
     @Test fun archiveMustMatchInstalledSigningCertificatePackageAndVersion() {
-        fun info(packageId: String = app.packageName, code: Int = 4, signer: Int = 1) = PackageInfo().apply {
+        fun info(packageId: String = app.packageName, code: Int = release.versionCode.toInt(), signer: Int = 1) = PackageInfo().apply {
             packageName = packageId; versionName = release.versionName; longVersionCode = code.toLong()
             applicationInfo = ApplicationInfo().apply { minSdkVersion = 29 }
             signingInfo = SigningInfo().apply { shadowOf(this).setSignatures(arrayOf(Signature(byteArrayOf(signer.toByte())))) }
         }
         val verifier = ApkVerifier(app)
-        val installed = info(code = 3)
+        val installed = info(code = BuildConfig.VERSION_CODE)
         verifier.verifyIdentity(installed, info(), release)
-        for (wrong in listOf(info(signer = 2), info(packageId = "other.app"), info(code = 3),
+        for (wrong in listOf(info(signer = 2), info(packageId = "other.app"), info(code = BuildConfig.VERSION_CODE),
             info().apply { signingInfo = null })) {
             assertThrows(IllegalStateException::class.java) { verifier.verifyIdentity(installed, wrong, release) }
         }

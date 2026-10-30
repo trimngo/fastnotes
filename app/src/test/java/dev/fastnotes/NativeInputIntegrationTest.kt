@@ -35,7 +35,7 @@ class NativeInputIntegrationTest {
     @Before fun setup() {
         fake = FakePanel.getInstance().apply { reset() }
         editor = NoteEditor(Note())
-        panel = ViwoodsPanel(FakePanel::class.java.name)
+        panel = ViwoodsPanel(FakePanel::class.java.name) { ManualNativeInkScheduler() }
         activity = Robolectric.buildActivity(Activity::class.java).setup()
         view = InkView(activity.get(), panel).apply {
             setRendering(false, true)

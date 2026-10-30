@@ -8,6 +8,7 @@ import dev.fastnotes.model.NoteEditor
 import dev.fastnotes.storage.LoadedNote
 import dev.fastnotes.storage.NoteStore
 import dev.fastnotes.updates.UpdateController
+import dev.fastnotes.diagnostics.CrashReports
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -15,6 +16,7 @@ class FastnotesApp : Application() {
     val preferences by lazy { getSharedPreferences("preferences", MODE_PRIVATE) }
     val store by lazy { NoteStore(File(filesDir, "sheets")) }
     val updates by lazy { UpdateController(this) }
+    val crashes by lazy { CrashReports(this) }
     val io = Executors.newSingleThreadExecutor { task -> Thread(task, "sheet-storage") }
     private val main = Handler(Looper.getMainLooper())
     var editor: NoteEditor? = null
@@ -24,6 +26,11 @@ class FastnotesApp : Application() {
     private data class PendingSave(val note: Note, val complete: (Boolean) -> Unit)
     private val pending = LinkedHashMap<String, PendingSave>()
     private var draining = false
+
+    override fun onCreate() {
+        super.onCreate()
+        crashes.install()
+    }
 
     fun start(callback: (Result<LoadedNote>) -> Unit) {
         editor?.let { callback(Result.success(LoadedNote(it.note, false))); return }

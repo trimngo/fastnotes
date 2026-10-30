@@ -21,18 +21,28 @@ sealed interface NativeEdit {
  * The callback thread owns its bitmap; the UI receives immutable completed edits, never points.
  * No View access, file I/O, global auto-draw rectangles or proprietary binaries in this class.
  */
-class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSetting") {
+class ViwoodsPanel internal constructor(
+    private val className: String,
+    private val schedulerFactory: () -> NativeInkScheduler
+) {
+    constructor(className: String = "android.os.enote.ENoteSetting") : this(className, { HandlerNativeInkScheduler() })
+
     private val lock = Any()
+    // Never acquire lock while holding firmwareLock: a slow native render must not block MOVE.
+    private val firmwareLock = Any()
     private var instance: Any? = null
     private var methods = emptyList<Method>()
     private var listener: Any? = null
-    private var generation = 0L
+    @Volatile private var generation = 0L
     private var frame: Bitmap? = null
     private var canvas: Canvas? = null
+    private var displayFrame: Bitmap? = null
+    private var displayCanvas: Canvas? = null
     private val raster = PaperRasterizer()
     private var page = Note()
     private var view = Viewport(1000f, 1, 1, 0f)
     private var screenBounds = Rect()
+    private var visibleLocal = Rect()
     private var orientation = 1
     private var previousMode: Int? = null
     private var nextId = 1L
@@ -44,8 +54,20 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
     private val edits = ArrayList<NativeEdit>()
     private var strokeIsEraser = false
     private var waitingForHandoff = false
-    private var renderBatch = Rect()
-    private var batchCount = 0
+    private val dirty = Rect()
+    private val strokeDamage = Rect()
+    private val finalDamage = Rect()
+    private data class Damage(val time: Long, val rect: Rect)
+    private val recentDamage = ArrayDeque<Damage>()
+    private var scheduler: NativeInkScheduler? = null
+    private var refreshTask: Runnable? = null
+    private var scheduledAt = Long.MAX_VALUE
+    private var nextRefreshAt = 0L
+    private var finalRefreshAt = Long.MAX_VALUE
+    private var refreshInFlight = false
+    private var handoffRequested = false
+    @Volatile var maxRenderMicros = 0L
+        private set
     var onEditsAvailable: (() -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     @Volatile var active = false
@@ -84,7 +106,7 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
     fun available() = availabilityReport() == "Available"
 
     fun start(context: Context, source: Bitmap, note: Note, x: Int, y: Int,
-              orientation: Int, erase: Boolean = false): Boolean {
+              orientation: Int, erase: Boolean = false, visible: Rect? = null): Boolean {
         stop()
         val report = availabilityReport()
         if (report != "Available") { status = report; return false }
@@ -96,22 +118,31 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
             synchronized(lock) {
                 frame = source.copy(Bitmap.Config.ARGB_8888, true)
                 canvas = Canvas(frame!!)
+                displayFrame = source.copy(Bitmap.Config.ARGB_8888, true)
+                displayCanvas = Canvas(displayFrame!!)
                 page = note
                 view = Viewport(note.pageWidth, source.width, source.height, note.scrollY)
                 screenBounds = Rect(x, y, x + source.width, y + source.height)
+                visibleLocal = visible?.let(::Rect) ?: Rect(0, 0, source.width, source.height)
+                check(visibleLocal.intersect(0, 0, source.width, source.height)) { "Empty editor visibility" }
                 this.orientation = orientation
                 nextId = (note.strokes.maxOfOrNull { it.id } ?: 0L) + 1
                 forceEraser = erase
                 eraserRadius = 14f * context.resources.displayMetrics.density / view.scale
                 points.clear(); pieces.clear(); erased.clear()
                 penDown = false; waitingForHandoff = false
-                renderBatch.setEmpty(); batchCount = 0
+                dirty.setEmpty(); strokeDamage.setEmpty(); finalDamage.setEmpty(); recentDamage.clear()
+                scheduledAt = Long.MAX_VALUE; nextRefreshAt = 0; finalRefreshAt = Long.MAX_VALUE
+                refreshInFlight = false; handoffRequested = false
                 generation++
+                val epoch = generation
+                scheduler = schedulerFactory()
+                refreshTask = Runnable { refresh(epoch) }
             }
             optional("setApplicationContext", context.applicationContext)
             previousMode = optional("getPictureMode") as? Int
-            call("setWritingJavaBitmap", frame, orientation, x, y)
-            call("setWritingJavaBackgroundBitmap", frame, orientation, x, y)
+            call("setWritingJavaBitmap", displayFrame, orientation, x, y)
+            call("setWritingJavaBackgroundBitmap", displayFrame, orientation, x, y)
             optional("setWritingInputJumpPointCount", 1)
             optional("setRenderWritingDelayCount", 0)
             val listenerType = methods.first { it.name == "setWritingInputlistener" &&
@@ -167,14 +198,15 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
                         if (penDown) finishLocked(false)
                         penDown = true
                         waitingForHandoff = false
+                        handoffRequested = false
+                        strokeDamage.setEmpty()
                         strokeIsEraser = forceEraser || type == MotionEvent.TOOL_TYPE_ERASER ||
                             buttons and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY) != 0
                         points.clear(); pieces.clear(); erased.clear()
                         call("onWritingStart")
                         call("setWritingEnabled", true)
-                        call("setWritingJavaBitmap", frame, orientation, screenBounds.left, screenBounds.top)
+                        call("setWritingJavaBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
                         append(x, y)
-                        flush()
                     }
                     MotionEvent.ACTION_MOVE -> if (penDown) append(x, y)
                     MotionEvent.ACTION_UP -> if (penDown) {
@@ -191,7 +223,8 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
         }
     }
 
-    private fun inside(x: Float, y: Float) = x >= 0 && y >= 0 && x < view.width && y < view.height
+    private fun inside(x: Float, y: Float) = x >= visibleLocal.left && y >= visibleLocal.top &&
+        x < visibleLocal.right && y < visibleLocal.bottom
 
     private fun append(x: Float, y: Float) {
         if (!inside(x, y)) {
@@ -220,7 +253,7 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
             }
             if (dirty != null) {
                 raster.page(canvas!!, page, view, erased)
-                queueRender(dirty, true)
+                queueRender(dirty)
             }
         } else {
             val a = view.screen(previous)
@@ -229,26 +262,87 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
             raster.segment(canvas!!, a, b, width)
             val pad = ceil(width / 2f).toInt() + 4
             queueRender(Rect(floor(min(a.x, b.x)).toInt() - pad, floor(min(a.y, b.y)).toInt() - pad,
-                ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad), false)
+                ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad))
         }
     }
 
-    private fun queueRender(local: Rect, force: Boolean) {
+    private fun queueRender(local: Rect) {
         val clipped = Rect(local)
-        if (!clipped.intersect(0, 0, view.width, view.height)) return
-        if (renderBatch.isEmpty) renderBatch.set(clipped) else renderBatch.union(clipped)
-        if (++batchCount >= 2 || force) flush()
+        if (!clipped.intersect(visibleLocal)) return
+        dirty.union(clipped)
+        strokeDamage.union(clipped)
+        scheduleRefresh()
     }
 
-    private fun flush() {
-        if (renderBatch.isEmpty) return
-        val screen = Rect(renderBatch)
-        screen.offset(screenBounds.left, screenBounds.top)
-        if (screen.intersect(screenBounds)) {
-            call("renderWriting", screen)
-            renderCount++
+    /** Called under lock. There is at most one pending wakeup, even for a callback burst. */
+    private fun scheduleRefresh() {
+        val clock = scheduler ?: return
+        val task = refreshTask ?: return
+        val due = when {
+            !dirty.isEmpty -> max(clock.now(), nextRefreshAt)
+            !finalDamage.isEmpty -> max(finalRefreshAt, nextRefreshAt)
+            else -> return
         }
-        renderBatch.setEmpty(); batchCount = 0
+        if (due >= scheduledAt) return
+        clock.cancel(task)
+        scheduledAt = due
+        clock.postAtTime(task, due)
+    }
+
+    private fun refresh(epoch: Long) {
+        val screen: Rect
+        synchronized(lock) {
+            if (!active || generation != epoch) return
+            val clock = scheduler ?: return
+            scheduledAt = Long.MAX_VALUE
+            val now = clock.now()
+            if (now < nextRefreshAt) { scheduleRefresh(); return }
+            val changed = Rect(dirty)
+            dirty.setEmpty()
+            if (!finalDamage.isEmpty && now >= finalRefreshAt) {
+                changed.union(finalDamage)
+                finalDamage.setEmpty(); finalRefreshAt = Long.MAX_VALUE
+            }
+            if (changed.isEmpty) { scheduleRefresh(); return }
+            while (recentDamage.isNotEmpty() && now - recentDamage.first().time > COVERAGE_MS) {
+                recentDamage.removeFirst()
+            }
+            val covered = Rect(changed)
+            for (damage in recentDamage) covered.union(damage.rect)
+            recentDamage.addLast(Damage(now, changed))
+            // ENote reads a distinct presentation bitmap. Input can continue drawing the preview
+            // while renderWriting is busy; neither a live Canvas nor a mutable Rect is shared.
+            displayCanvas!!.drawBitmap(frame!!, covered, covered, null)
+            screen = Rect(covered).apply { offset(screenBounds.left, screenBounds.top) }
+            nextRefreshAt = now + FRAME_MS
+            refreshInFlight = true
+        }
+        try {
+            val started = System.nanoTime()
+            val rendered = synchronized(firmwareLock) {
+                if (!active || generation != epoch) false
+                else { call("renderWriting", screen); true }
+            }
+            val duration = (System.nanoTime() - started) / 1000
+            synchronized(lock) {
+                if (!active || generation != epoch) return
+                refreshInFlight = false
+                if (rendered) {
+                    renderCount++
+                    maxRenderMicros = max(maxRenderMicros, duration)
+                }
+                scheduleRefresh()
+                endWritingIfReady()
+            }
+        } catch (_: Throwable) {
+            synchronized(lock) {
+                if (generation != epoch) return
+                refreshInFlight = false
+                status = "Native ink stopped at renderWriting"
+                active = false
+            }
+            onFailure?.invoke()
+        }
     }
 
     private fun finishLocked(cancel: Boolean) {
@@ -256,7 +350,7 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
         penDown = false
         if (cancel) {
             raster.page(canvas!!, page, view)
-            queueRender(Rect(0, 0, view.width, view.height), true)
+            queueRender(Rect(0, 0, view.width, view.height))
         } else if (strokeIsEraser && erased.isNotEmpty()) {
             val ids = erased.toSet()
             page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
@@ -269,7 +363,11 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
                 edits.add(NativeEdit.Add(all))
             }
         }
-        flush()
+        if (!strokeDamage.isEmpty) {
+            finalDamage.union(strokeDamage)
+            finalRefreshAt = min(finalRefreshAt, (scheduler?.now() ?: 0) + SETTLE_MS)
+            scheduleRefresh()
+        }
         points.clear(); pieces.clear(); erased.clear()
         waitingForHandoff = true
         onEditsAvailable?.invoke()
@@ -282,10 +380,17 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
     }
 
     fun acknowledge() = synchronized(lock) {
-        if (active && !penDown && edits.isEmpty() && waitingForHandoff) {
+        handoffRequested = true
+        endWritingIfReady()
+    }
+
+    private fun endWritingIfReady() {
+        if (active && !penDown && edits.isEmpty() && waitingForHandoff && handoffRequested &&
+            dirty.isEmpty && finalDamage.isEmpty && !refreshInFlight) {
             waitingForHandoff = false
+            handoffRequested = false
             try {
-                call("setWritingJavaBackgroundBitmap", frame, orientation, screenBounds.left, screenBounds.top)
+                call("setWritingJavaBackgroundBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
                 call("onWritingEnd")
             } catch (_: Throwable) {
                 status = "Native handoff failed at " + failureStage
@@ -305,20 +410,30 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
     }
 
     fun stop() {
+        val oldScheduler: NativeInkScheduler?
         synchronized(lock) {
             try { if (penDown) finishLocked(false) } catch (_: Throwable) { }
             active = false
             generation++
             penDown = false
+            oldScheduler = scheduler
+            scheduler = null; refreshTask = null
+            dirty.setEmpty(); finalDamage.setEmpty(); recentDamage.clear()
         }
-        optional("setWritingInputlistener", null)
-        optional("setWritingEnabled", false)
-        optional("onWritingEnd")
-        optional("releaseWritingJavaBitmap")
-        optional("releaseWritingJavaBackgroundBitmap")
-        if (previousMode != null && optional("getPictureMode") == 4) optional("setPictureMode", previousMode)
-        previousMode = null
-        instance = null; listener = null; methods = emptyList()
+        oldScheduler?.close()
+        synchronized(firmwareLock) {
+            optional("setWritingInputlistener", null)
+            optional("setWritingEnabled", false)
+            optional("onWritingEnd")
+            optional("releaseWritingJavaBitmap")
+            optional("releaseWritingJavaBackgroundBitmap")
+            if (previousMode != null && optional("getPictureMode") == 4) optional("setPictureMode", previousMode)
+            previousMode = null
+            instance = null; listener = null; methods = emptyList()
+        }
+        synchronized(lock) {
+            frame = null; canvas = null; displayFrame = null; displayCanvas = null
+        }
     }
 
     private fun optional(name: String, vararg args: Any?): Any? =
@@ -331,8 +446,8 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
         return result
     }
 
-    private fun invoke(name: String, args: Array<out Any?>): Any? {
-        val receiver = instance ?: return null
+    private fun invoke(name: String, args: Array<out Any?>): Any? = synchronized(firmwareLock) {
+        val receiver = instance ?: return@synchronized null
         val method = methods.firstOrNull { method ->
             method.name == name && method.parameterTypes.size == args.size &&
                 method.parameterTypes.indices.all { i ->
@@ -345,10 +460,13 @@ class ViwoodsPanel(private val className: String = "android.os.enote.ENoteSettin
                     }
                 }
         } ?: throw NoSuchMethodException(name)
-        return method.invoke(receiver, *args)
+        method.invoke(receiver, *args)
     }
 
     companion object {
+        private const val FRAME_MS = 8L
+        private const val COVERAGE_MS = 32L
+        private const val SETTLE_MS = 24L
         private val REQUIRED = setOf("getInstance", "setWritingInputlistener", "setWritingJavaBitmap",
             "setWritingJavaBackgroundBitmap", "setWritingEnabled", "onWritingStart", "onWritingEnd",
             "renderWriting", "releaseWritingJavaBitmap", "releaseWritingJavaBackgroundBitmap")

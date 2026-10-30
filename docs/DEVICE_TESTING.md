@@ -7,7 +7,10 @@ details → Copy** in Fastnotes to copy the model, build and native-route counte
 No tablet is attached to the build environment. Version 0.1.0 was tested by the
 user: writing was very laggy and the bitmap-only acceleration option produced
 brief static squares in full-screen portrait. Version 0.2.0 changes that path
-to direct native input and needs a fresh hardware check.
+to direct native input. The user's 0.3.0 photos confirmed native callbacks and FAST
+mode, but showed rapid strokes with live gaps that filled after a delay, plus
+Android fallback/slow refresh and a reported exit in landscape split-screen.
+Version 0.3.1 changes refresh pacing and pane startup and needs a fresh hardware check.
 
 ## First pass
 
@@ -32,6 +35,14 @@ to direct native input and needs a fresh hardware check.
    note. Then force-stop and reopen it; repeat after a tablet restart.
 9. Create a second sheet using Sheets, rename it, switch between sheets, and
    confirm each one's content and scroll position survive reopening.
+10. Repeat the continuous rapid up/down stroke from the supplied photos. Observe
+    whether segments appear while the pen is moving, after the pen stops, or only
+    after a delay. Check the last few millimeters of a stroke without moving again.
+11. In landscape, place Chrome on the left and Fastnotes on the right. Tap Chrome,
+    then tap Fastnotes: **Fast ink paused** should return to **Viwoods native**.
+    Move the divider and repeat with a narrow pane. If it stays on Android ink,
+    use **Settings → Retry fast ink**, close Settings, and copy Device details.
+    Include last native start, pane/panel orientation, visible bounds and fallback.
 
 ## Rendering
 
@@ -40,6 +51,12 @@ a short writing test, open **Settings → Device details → Copy**. Native call
 accepted samples and panel updates should be nonzero. Last native picture mode
 should be 4 (FAST). The app pauses native input under this dialog, so its status
 may say paused even when the writing test used the native route.
+
+In 0.3.1, diagnostics also show the paced refresh policy and longest native refresh
+call. That duration measures the Java/native call, not visible panel completion.
+If the app closes, reopen it and copy Device details to capture Android's exit
+reason and any recorded Java stack locations. Reports stay private until copied;
+neither exception messages nor note content are recorded.
 
 Compare the delay and static squares against 0.1.0 and ForestNote. If native
 samples stay at zero, copy the API/fallback reason rather than assuming the

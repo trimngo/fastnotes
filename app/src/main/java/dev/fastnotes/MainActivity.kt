@@ -235,7 +235,8 @@ class MainActivity : Activity() {
             Tool.PEN -> if (paper.palmGuard) "Palm guard on · two fingers or arrows to scroll"
                 else "Pen writes · one finger scrolls"
         }
-        hint.text = (if (paper.nativeActive) "Viwoods native · " else "Android ink · ") + instruction
+        val engine = paper.engineLabel
+        hint.text = engine + " · " + if (engine == "Fast ink paused") "Tap this pane to resume · " + instruction else instruction
     }
 
     private fun sheets() {
@@ -369,6 +370,11 @@ class MainActivity : Activity() {
         label(if (paper.panelAvailable)
             "Uses firmware pen callbacks directly. Enabled by default. Turn off to compare Android input."
             else "The native Viwoods input interface was not found. Android ink is active.")
+        if (paper.panelAvailable) content.addView(button("Retry fast ink") {
+            app.preferences.edit().putBoolean("viwoodsNativeInk", true).apply()
+            paper.setRendering(app.preferences.getBoolean("frontBuffer", true), true)
+            Toast.makeText(this, "Fast ink will retry when you close Settings", Toast.LENGTH_SHORT).show()
+        })
         label("Notes stay on this device. Uninstalling removes them. This version has no sync or note encryption.")
         content.addView(button("Device details") { about() })
         content.addView(button("App updates") { openUpdates() })
@@ -386,9 +392,10 @@ class MainActivity : Activity() {
             "\nReported AiPaper firmware: 3.15.15" +
             "\n\n" + paper.engineDescription +
             "\n" + paper.nativeDiagnostics +
-            "\nInput samples this session: " + paper.sampleCount +
-            "\nAverage input event age: " + String.format(java.util.Locale.ROOT, "%.1f ms", average) +
+            "\nAndroid input samples this session: " + paper.sampleCount +
+            "\nAverage Android event age: " + String.format(java.util.Locale.ROOT, "%.1f ms", average) +
             "\nThis is app input timing, not pen-to-visible-ink latency." +
+            "\n\n" + app.crashes.details() +
             "\n\nFor testing: try both landscape rotations, portrait, Chrome split-screen, pen erasing, scrolling, and reopening a saved sheet."
         show(AlertDialog.Builder(this).setTitle("Fastnotes " + BuildConfig.VERSION_NAME)
             .setMessage(details)

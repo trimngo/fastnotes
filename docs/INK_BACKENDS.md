@@ -8,10 +8,23 @@ not implement the firmware callback topology used by ForestNote.
 
 The new implementation registers ENoteSetting.setWritingInputlistener and
 processes pen samples directly on the firmware callback thread. It draws into a
-separate ARGB preview bitmap and sends padded, clipped dirty rectangles to
-renderWriting. It begins a writing transaction on pen-down, batches two changed
-regions, flushes on pen-up, and ends the transaction after the UI ingests the
-completed edit. Pressurized native hover events are normalized as pen input.
+separate ARGB preview bitmap. A dedicated refresh worker copies changed areas into
+a presentation bitmap and calls renderWriting without holding the input lock.
+Pressurized native hover events are normalized as pen input.
+
+The original 0.2.0–0.3.0 two-sample batching was unpaced and discarded submitted
+damage immediately. The user supplied 0.3.0 photos showing gaps in rapid handwriting
+which filled after a delay without interaction. The device reported 16,232 native
+callbacks, 11,950 accepted samples, 5,978 refreshes and FAST mode 4. This establishes
+that the native route was active, not that every refresh was displayed promptly.
+There is no firmware presentation acknowledgement available through the inspected API.
+
+Version 0.3.1 uses 8 ms pacing, one pending wakeup and unions all unsent damage.
+Each refresh also covers the preceding 32 ms of damage to tolerate intermediate
+requests being coalesced by a slower consumer. A stopped pen cannot strand the last
+sample waiting for another input callback. At pen-up, a 24 ms settling pass covers
+the complete gesture before handoff can end writing. These are implementation
+parameters, not measured physical latency or a guarantee about the firmware queue.
 
 The controller temporarily selects FAST picture mode when the previous mode can
 be read, and restores it when leaving the editor. No firmware or security
@@ -25,9 +38,12 @@ with firmware ink. Completed immutable strokes/erase operations are posted to
 the UI for the canonical document, undo history and background saving. The same
 paper/stroke rasterizer is used for preview restoration and the canonical page.
 
-Geometry is captured on the UI thread and frozen for a native session. Native
-pen-down outside the current editor rectangle is ignored, and dirty rectangles
-are intersected with that exact screen-space rectangle. Resize, modal UI, loss
+Geometry is captured on the UI thread and frozen for a native session. Pre-draw
+checks retry startup after late layout/position changes, while unchanged geometry
+is idempotent. A clipped editor uses its local visible rectangle; pen-down and dirty
+regions are bounded by the corresponding screen rectangle. Physical display mode
+and rotation determine ENote orientation; a portrait-shaped landscape split pane
+must not override it. Resize, modal UI, loss
 of focus, Move mode and pause stop input and release native references. Pending
 accepted edits are drained before replacing a note or viewport. Stale callbacks
 from an earlier session are ignored.
@@ -36,7 +52,13 @@ A listener that starts but produces no in-window samples falls back to Android
 input after a short watchdog interval; held Android events are replayed so the
 first stroke is not swallowed. Reflection/render failures expose a fallback
 reason. Device details reports callback, accepted-sample and panel-update counts
-without logging note contents or raw stroke coordinates.
+without logging note contents or raw stroke coordinates. The footer distinguishes
+a paused native route from an Android fallback. Settings can retry native startup.
+
+Device details also reads Android's recent process exit reasons (API 30+) and a
+bounded app-private Java exception report. The report omits exception messages;
+native crashes, ANRs and low-memory exits are distinguished when Android supplies
+that evidence. Existing crashes cannot be attributed to a cause from photos alone.
 
 ## ForestNote comparison
 
@@ -70,7 +92,11 @@ by sheet; scrolling has a short debounce.
 The user confirmed Android 13/API 33 and firmware 3.15.15 on the full-size tablet.
 The direct callback protocol was primarily documented on Mini firmware 3.14.5;
 passing fake-API tests cannot establish real full-size latency, clipping or native
-library behavior. The 0.2.0 build requires a fresh physical-device check.
+library behavior. User feedback confirms native input/FAST mode in 0.3.0 portrait,
+but reports Android fallback and an exit in landscape split-screen with Chrome.
+ForestNote can also use fast ink in that layout but has stability problems. The
+0.3.1 changes still require a fresh physical-device check; no hardware is connected
+to the build environment and no crash cause has been established from a stack trace.
 
 The APK deliberately retains target SDK 30 / the documented untrusted_app_30
 compatibility context for this vendor API test. API 30 is Android 11, so Android

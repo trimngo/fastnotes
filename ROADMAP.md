@@ -69,6 +69,22 @@ Android's installer. Automatic checks are enabled by default and can be disabled
 Install 0.3.0 once to receive future builds through the app. Notes remain local;
 update IO has its own worker. See [update details](docs/UPDATES.md).
 
+## Rapid ink and landscape split-screen: 0.3.1
+
+The user confirmed native callbacks and FAST mode in 0.3.0 but supplied photos of
+gaps during rapid strokes that filled after a delay without interaction. Chrome
+on the left with Fastnotes on the right in landscape stayed on Android ink, with
+slow refresh and a reported exit. ForestNote also demonstrates fast ink in this
+layout but is unstable. An actual crash stack/cause has not yet been supplied.
+
+Version 0.3.1 replaces point-count-only refreshes with a paced/coalescing worker,
+a separate presentation bitmap, short retained damage coverage and a completed
+stroke settling pass. It uses physical display orientation for the firmware,
+retries after late pane layout, avoids restarting stable sessions, and clips to
+the visible pane. Footer states now distinguish paused native ink from fallback;
+Device details includes start bounds, orientation and local crash/exit evidence.
+Software tests cannot establish that the physical skips or crashes are resolved.
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

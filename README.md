@@ -1,10 +1,10 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. Version 0.3.0 adds in-app updates to the direct Viwoods
-pen-input path introduced in 0.2.0 after the first build exhibited
-lag and transient static squares on the user's full-size tablet. Full-size panel
-latency and the correction still need confirmation on the physical device.
+keeps notes offline. Version 0.3.1 targets gaps in rapid live handwriting and native
+ink startup in landscape split-screen. Native callbacks and FAST mode were confirmed
+on the user's full-size tablet in 0.3.0; the new refresh and window handling still
+need a physical-device comparison.
 
 ## In this version
 
@@ -19,14 +19,22 @@ latency and the correction still need confirmation on the physical device.
 - Atomic saves, checksums, bounded decoding, and recovery of the previous saved
   copy if the latest file is damaged.
 - Viwoods direct pen callbacks enabled by default when the required firmware
-  interfaces are present. A dedicated worker bitmap supplies live ink without
-  repainting Android Views for every pen sample.
+  interfaces are present. Input immediately draws a preview; a separate worker
+  coalesces presentation into at most one pending wakeup with 8 ms pacing. Recent
+  dirty regions remain covered briefly so a skipped partial update can catch up.
+- A separate presentation bitmap keeps native refresh calls off the pen-input
+  lock. Pen-up rechecks the completed stroke before ending its transaction.
 - Canonical stroke handoff after pen-up, explicit native writing transactions,
   clipped partial refreshes and temporary FAST display mode restored on exit.
 - Android front-buffer input/rendering as a fallback. A silent native listener
   falls back after a short watchdog interval and replays held Android input.
 - Native input is suspended when obscured, paused, unfocused, or using the Move
   tool. View geometry is captured on the UI thread and frozen for each session.
+- Native startup retries when pane geometry becomes usable. Stable geometry does
+  not restart the controller on every focus/layout callback. Firmware orientation
+  follows the physical display, including when a narrow pane reports portrait.
+- Device details includes native startup/visibility/timing diagnostics and private
+  crash/Android process-exit evidence without note contents or exception messages.
 - Automatic checks for GitHub app updates, including development releases, with
   downloads and Android installation available inside the app.
 
@@ -54,7 +62,10 @@ Open **Settings → Device details** to see the actual Android version, model an
 system build. Input timing shown there measures delivery to the application,
 **not** pen-to-visible-ink latency.
 
-The footer identifies **Viwoods native** or **Android ink**. Device details shows
+The footer identifies **Viwoods native**, **Fast ink paused**, or **Android ink**.
+When Chrome has focus, tap Fastnotes to resume its native route. Settings includes
+**Retry fast ink** to retry a failed native start after closing the dialog.
+Device details shows
 native callback/sample/refresh counts and any fallback reason. Check these values
 after a short writing test to establish which route actually ran.
 
@@ -68,6 +79,8 @@ permission is used only to check GitHub releases and download app updates.
 The REQUEST_INSTALL_PACKAGES permission lets Android offer installation with
 the user's approval. There is no analytics, recognition service, synchronization,
 or shared storage permission. Notes are never sent with update requests or logged.
+Failure reports stay private on the device and include exception types/stack
+locations, not exception messages. Copying Device details is an explicit user action.
 Automatic backup and device
 transfer are excluded. This version does not implement note encryption or export:
 **uninstalling or clearing app data removes your notes**. Keep important work in

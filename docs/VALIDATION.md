@@ -1,4 +1,60 @@
-# Version 0.3.0 app-update validation
+# Version 0.3.1 rapid-ink and split-screen validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+Result: BUILD SUCCESSFUL. **58 tests passed**, no failures, errors or skips.
+Lint has no errors; debug and release variants compile. The existing 47 tests
+remain green with asynchronous presentation fixtures. Eleven new tests cover:
+
+- A 300-sample burst uses one pending wakeup and presents its tail without more
+  input; a last-request-wins consumer still sees recent segments before pen-up.
+- Pen-up settles the entire gesture before ending writing; a blocked native
+  refresh does not hold up MOVE callbacks or expose their live drawing canvas.
+- Stopping cancels old-session work before a replacement session can render.
+- A focused right-hand landscape pane starts native ink; repeated environment
+  callbacks retain its listener, and focus loss/regain pauses/resumes it.
+- Late visibility/position changes retry without requiring a size change; partial
+  panes remain native with rendering/input constrained to their visible bounds.
+- Physical display rotation determines firmware orientation independently of a
+  portrait-shaped split-screen pane, including both landscape rotations.
+- Bounded crash reports survive reopening and omit exception messages/private text.
+
+The panel and multi-window tests use Skia/Robolectric and a firmware contract fake.
+They verify app behavior, not actual panel queueing, performance, or native crashes.
+
+## Device evidence and remaining check
+
+The 0.3.0 photo shows Viwoods AiPaper, Android 13/API 33, system build 3.15.15,
+16,232 native callbacks, 11,950 accepted samples, 5,978 updates, and FAST mode 4.
+The user observed gaps during rapid handwriting that filled after a delay without
+interaction. Landscape with Chrome left/Fastnotes right stayed on Android ink
+after tapping Fastnotes. App exits were reported; ForestNote was also identified
+as able to use fast ink there but unstable. No crash stack establishes a cause.
+
+The 0.3.1 changes target unpaced partial-update traffic and transient window/
+orientation handling. Re-test the same rapid pattern and landscape split-screen
+on the physical tablet; do not describe the hardware skips or exits as resolved
+until this is confirmed. Device details now includes startup bounds, panel/pane
+orientation, refresh-call timing, a private Java failure report and Android exit
+reasons where available. No tablet is attached to the build environment.
+
+## Current APK identity
+
+- Application ID: `dev.fastnotes`; version `0.3.1` (code 4)
+- Minimum API 29; compatibility target 30; note format 1, all unchanged
+- Same signing certificate as previous releases; APK signature verified
+- APK SHA-256: `8e277394acf1aa20a9d57f26c2b49c5a4a01c1cea21eeee411060d3f0df0250c`
+- Signing certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Update through Settings → App updates → Check now, or install over the existing app
+
+---
+
+## Earlier 0.3.0 app-update validation
 
 Software checks performed on 30 October 2026:
 
