@@ -8,6 +8,7 @@ import android.view.View
 import dev.fastnotes.model.*
 import dev.fastnotes.storage.NoteStore
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -24,6 +25,10 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [33])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ActivityTest {
+    @Before fun disableRealUpdateRequests() {
+        (RuntimeEnvironment.getApplication() as FastnotesApp).updates.automatic = false
+    }
+
     @Test fun coldStartReopensTheLastSelectedSheetFromDisk() {
         val app = RuntimeEnvironment.getApplication() as FastnotesApp
         val first = Note(title = "First")

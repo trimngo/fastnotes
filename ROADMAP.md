@@ -61,6 +61,14 @@ message. The native path still needs on-device performance and artifact checks.
 See [validation evidence](docs/VALIDATION.md) and the
 [device test guide](docs/DEVICE_TESTING.md).
 
+## App updates: 0.3.0
+
+At the user's request, in-app updating adds automatic daily checks against GitHub
+development releases, a manual check, verified APK downloads, and handoff to
+Android's installer. Automatic checks are enabled by default and can be disabled.
+Install 0.3.0 once to receive future builds through the app. Notes remain local;
+update IO has its own worker. See [update details](docs/UPDATES.md).
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

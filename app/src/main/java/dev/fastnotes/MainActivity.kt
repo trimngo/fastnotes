@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -20,6 +21,8 @@ import android.widget.*
 import dev.fastnotes.ink.InkView
 import dev.fastnotes.ink.Tool
 import dev.fastnotes.model.Note
+import dev.fastnotes.updates.UpdateActivity
+import dev.fastnotes.updates.UpdateState
 import java.text.DateFormat
 import java.util.Date
 
@@ -35,6 +38,12 @@ class MainActivity : Activity() {
     private lateinit var pen: Button
     private lateinit var eraser: Button
     private lateinit var move: Button
+    private lateinit var update: Button
+    private val updateObserver: (UpdateState) -> Unit = { state ->
+        val label = if (state is UpdateState.Downloading) "Updating…" else "Update"
+        if (update.text != label) update.text = label
+        update.visibility = if (state.release != null) View.VISIBLE else View.GONE
+    }
     private var modalCount = 0
     private var resumed = false
     private var revision = 0L
@@ -63,6 +72,8 @@ class MainActivity : Activity() {
         }
         header.addView(title, LinearLayout.LayoutParams(0, dp(48), 1f))
         title.gravity = Gravity.CENTER_VERTICAL
+        update = button("Update") { openUpdates() }.apply { visibility = View.GONE }
+        header.addView(update)
         header.addView(button("Sheets") { sheets() })
         root.addView(header)
         root.addView(rule())
@@ -150,10 +161,21 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        app.updates.observe(updateObserver)
+    }
+
+    override fun onStop() {
+        app.updates.removeObserver(updateObserver)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         resumed = true
         paper.setEnvironment(true, modalCount > 0, isInMultiWindowMode)
+        app.updates.check(automatic = true)
     }
 
     override fun onPause() {
@@ -349,6 +371,7 @@ class MainActivity : Activity() {
             else "The native Viwoods input interface was not found. Android ink is active.")
         label("Notes stay on this device. Uninstalling removes them. This version has no sync or note encryption.")
         content.addView(button("Device details") { about() })
+        content.addView(button("App updates") { openUpdates() })
         show(AlertDialog.Builder(this).setTitle("Paper & input")
             .setView(ScrollView(this).apply { addView(content) })
             .setPositiveButton("Done") { _, _ -> save() }.create())
@@ -375,6 +398,12 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Device details copied", Toast.LENGTH_SHORT).show()
             }
             .setPositiveButton("OK", null).create())
+    }
+
+    private fun openUpdates() {
+        paper.finishGesture(false)
+        if (started) save()
+        startActivity(Intent(this, UpdateActivity::class.java))
     }
 
     private fun message(title: String, text: String) {

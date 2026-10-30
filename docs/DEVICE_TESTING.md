@@ -70,3 +70,12 @@ Include Android/model/build from Device details, selected renderer, orientation,
 whether Chrome split-screen was active, pen/eraser/palm actions, and a short set
 of reproduction steps. Use a fresh test sheet so any shared screenshots or video
 do not contain private notes.
+
+## App updates (0.3.0 onward)
+
+Install 0.3.0 manually once. Open **Settings → App updates → Check now**. After a
+newer build is published, the main screen should show **Update**. Select
+**Download & install**, deny installation permission once, retry and allow it,
+then confirm the Android installer. Cancel/retry the installer as well. Check
+rotation and leaving/reopening during a download, and that existing sheets still
+open after updating. Disable automatic checks and verify offline writing/saving.

@@ -1,7 +1,8 @@
 # Fastnotes
 
-A small, offline Android handwriting notepad for the **full-size Viwoods AiPaper**.
-Version 0.2.0 tests a direct Viwoods pen-input path after the first build exhibited
+A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
+keeps notes offline. Version 0.3.0 adds in-app updates to the direct Viwoods
+pen-input path introduced in 0.2.0 after the first build exhibited
 lag and transient static squares on the user's full-size tablet. Full-size panel
 latency and the correction still need confirmation on the physical device.
 
@@ -26,6 +27,8 @@ latency and the correction still need confirmation on the physical device.
   falls back after a short watchdog interval and replays held Android input.
 - Native input is suspended when obscured, paused, unfocused, or using the Move
   tool. View geometry is captured on the UI thread and frozen for each session.
+- Automatic checks for GitHub app updates, including development releases, with
+  downloads and Android installation available inside the app.
 
 Tap the sheet title to rename it. Use **Sheets** to create or reopen a sheet.
 **Erase** removes whole strokes; **Undo** restores them. Line spacing changes the
@@ -38,7 +41,14 @@ Use the signed development APK attached to the project's GitHub development
 release. Download it in Chrome on the AiPaper and open the APK to install it.
 Android may ask you to allow APK installation from Chrome or the file manager.
 Future APKs must use the same application ID and signing key to update in place.
-Install over 0.1.0 to preserve saved sheets; uninstalling is not needed.
+Install over an earlier version to preserve saved sheets; uninstalling is not needed.
+
+After installing 0.3.0 once, Fastnotes checks for new versions when opened, at
+most once a day. An **Update** button appears when a version is available. Tap
+**Download & install**, allow installation from Fastnotes if Android asks, then
+confirm the installation. **Settings → App updates** offers **Check now** and
+an option to disable automatic checks. Downloads use the network; writing and
+local saving work offline. See [update behavior and publishing](docs/UPDATES.md).
 
 Open **Settings → Device details** to see the actual Android version, model and
 system build. Input timing shown there measures delivery to the application,
@@ -53,9 +63,12 @@ split-screen, both landscape rotations, palm rejection, erasing and reopening.
 
 ## Data
 
-Notes are stored in the application's private internal storage. There is no
-INTERNET permission, analytics, recognition service, synchronization, or shared
-storage permission. Note contents are never logged. Automatic backup and device
+Notes are stored in the application's private internal storage. The INTERNET
+permission is used only to check GitHub releases and download app updates.
+The REQUEST_INSTALL_PACKAGES permission lets Android offer installation with
+the user's approval. There is no analytics, recognition service, synchronization,
+or shared storage permission. Notes are never sent with update requests or logged.
+Automatic backup and device
 transfer are excluded. This version does not implement note encryption or export:
 **uninstalling or clearing app data removes your notes**. Keep important work in
 your existing notes app until device testing is complete.

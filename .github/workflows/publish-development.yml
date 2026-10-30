@@ -24,13 +24,24 @@ jobs:
         with:
           ref: ${{ inputs.artifact_commit }}
           persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '13114758'
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install APK verification tools
+        run: sdkmanager "build-tools;36.0.0"
       - name: Validate staged artifact
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
           EXPECTED_SHA256: ${{ inputs.sha256 }}
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, re, zipfile
+          import hashlib, json, os, pathlib, re, subprocess, zipfile
           tag = os.environ["RELEASE_TAG"]
           expected = os.environ["EXPECTED_SHA256"]
           assert re.fullmatch(r"v[0-9A-Za-z._-]+", tag), "Invalid tag"
@@ -43,6 +54,21 @@ jobs:
           metadata = json.loads(pathlib.Path("build.json").read_text())
           assert metadata["sha256"] == expected
           assert metadata["application_id"] == "dev.fastnotes"
+          tools = pathlib.Path(os.environ["ANDROID_HOME"]) / "build-tools" / "36.0.0"
+          signature = subprocess.check_output([str(tools / "apksigner"), "verify", "--print-certs", str(apk)], text=True)
+          certificate = "2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601"
+          assert re.findall(r"certificate SHA-256 digest: ([0-9a-f]+)", signature) == [certificate], "Wrong signing certificate"
+          badging = subprocess.check_output([str(tools / "aapt2"), "dump", "badging", str(apk)], text=True)
+          package = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']+)'", badging, re.M)
+          minimum = re.search(r"^(?:minSdkVersion|sdkVersion):'([0-9]+)'", badging, re.M)
+          assert package and minimum, "Missing APK identity"
+          assert package[1] == "dev.fastnotes"
+          assert metadata["version_code"] == int(package[2])
+          assert metadata["version"] == package[3]
+          update = dict(schema=1, application_id=package[1], version_code=int(package[2]),
+                        version_name=package[3], min_sdk=int(minimum[1]), apk_name=name,
+                        bytes=apk.stat().st_size, sha256=expected)
+          pathlib.Path("update.json").write_text(json.dumps(update, indent=2) + "\n")
           pathlib.Path("SHA256SUMS").write_text(f"{expected}  {name}\n")
           with open(os.environ["GITHUB_ENV"], "a") as out:
               out.write(f"APK_FILE={name}\n")
@@ -51,4 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$RELEASE_TAG" "$APK_FILE" SHA256SUMS --repo "$GITHUB_REPOSITORY"
+        run: |
+          gh release upload "$RELEASE_TAG" "$APK_FILE" SHA256SUMS --repo "$GITHUB_REPOSITORY"
+          # Publish discovery metadata last, after the complete APK is available.
+          gh release upload "$RELEASE_TAG" update.json --repo "$GITHUB_REPOSITORY"

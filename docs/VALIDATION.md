@@ -1,4 +1,46 @@
-# Version 0.2.0 native-input validation
+# Version 0.3.0 app-update validation
+
+Software checks performed on 30 October 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+Result: BUILD SUCCESSFUL. **47 tests passed**, no failures, errors or skips.
+Lint reports no errors. Debug and release variants compile. The 33 existing
+handwriting/storage/layout tests remain green; 14 new update tests cover:
+
+- Development-release discovery, draft/incomplete release filtering, version-code
+  comparison and preventing metadata/download URLs from other repositories.
+- Wrong application metadata, unsupported schema/API, size limits and malformed
+  hashes, interrupted/oversized/corrupt downloads and partial-file cleanup.
+- Automatic check intervals, disabling automatic checks, manual retries, offline
+  saving, restored notifications/downloads and main-thread state delivery.
+- APK identity/version/signing-certificate checks, read-only installer grants,
+  excluding note directories, permission denial/retry/grant and avoiding repeated
+  installer launches after cancellation.
+
+Updater HTTP and installer lifecycle tests use contract fakes/Robolectric. A real
+Android permission prompt and a complete in-place update still need a tablet test.
+No hardware ink performance claim is added by this release.
+
+## Current APK identity
+
+- Application ID: `dev.fastnotes`; version `0.3.0` (code 3)
+- Minimum API: 29; compatibility target: 30 (unchanged for native ink)
+- Same signing certificate as 0.1.0 and 0.2.0; APK signature verified
+- Android permissions: INTERNET and REQUEST_INSTALL_PACKAGES; AndroidX also
+  defines/uses an app-local signature permission for nonexported receivers
+- APK SHA-256: `a51460dc2f255308d179bcd7315296d4d1aaa4dc01e760b1413223a5848f6b57`
+- Signing certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Note format: version 1, unchanged. Install over the previous app.
+
+See [update flow and publishing](UPDATES.md) and [device testing](DEVICE_TESTING.md).
+
+---
+
+## Earlier 0.2.0 native-input validation
 
 Software checks performed on 30 October 2026:
 
