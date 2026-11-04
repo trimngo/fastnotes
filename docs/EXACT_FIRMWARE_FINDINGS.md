@@ -35,8 +35,9 @@ the broken policy described in older community notes.
 T1000's callback posts an event containing action/x/y/pressure to
 `ENoteWriting.sendAutoDrawData` → native auto-draw, without app-rendered Java
 bitmap blits. Its UP schedules a temporary-overlay clear after 800 ms. This is a
-concrete alternate presentation route; physical access, latency and clipping for
-Fastnotes still need device verification.
+concrete alternate presentation route. The user subsequently reported test6 live
+writing works quite well; quantitative latency, clipping, orientation and split-
+screen coverage are not established by that report.
 
 The Java `setT1000AutoDrawEnable` Boolean has no observed consumer in the captured
 policy. Tool -1 is the Java initial value while the T1000 constructor independently
@@ -77,4 +78,31 @@ notification; replacing it with direct `renderBrush` would omit that behavior.
 Jump/delay counts forward directly to JNI and their native semantics remain
 unknown. The export budget omitted libpaintworker, so buffer aliasing, native
 return values and point-filter behavior cannot be resolved from these DEX units.
-No extra export is needed for the first scoped-service experiment.
+No extra export was needed for the first scoped-service experiment. Exact brush
+matching now warrants inspecting the omitted native library through test7 export.
+
+
+## Completion rendering after the positive test6 report
+
+The user observed good live ink, followed by disappearance and fixed-width replay
+about one second after pen-up. Test6's 1,000 ms Android holdback overlaps the
+firmware's 800 ms overlay clear. Test7 prepares completed Android ink at pen-up
+and preserves current/historical pressure variation in its replay outline.
+
+The captured AutoDrawPolicy initializes width arguments to 2 and 8, then passes
+them into JNI unchanged. Raw native pressure also goes directly to JNI. There is
+no Java pressure-to-width curve or documented unit/normalization contract. Test7's
+2–8 px normalized Android replay is an independent approximation, not an extracted
+native brush, and exact visual matching remains a physical-device question.
+
+
+## Native pressure curve investigation
+
+The original inventory lists readable 64-bit and 32-bit libpaintworker copies,
+but DEX-first export consumed the 20 MiB combined code budget. Test7 exports known
+native libraries first and allows 22 MiB combined code (24 MiB final ZIP). A new
+user-selected ZIP can therefore supply the JNI implementation without loading or
+executing it. Check ELF dependencies and JNI pressure/width entry points before
+assuming the curve lives there: pressure may be delegated to another library,
+driver or controller firmware. Exact replay also requires matching pressure
+normalization, smoothing and geometry, not just one width formula.

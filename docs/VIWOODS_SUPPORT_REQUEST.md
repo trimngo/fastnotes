@@ -74,3 +74,20 @@ service access and visible ink remain unverified. Please confirm the supported
 third-party scoped API and cleanup/rotation/split-screen contract. Vendor code
 and the user's ZIP are not included in this public draft. This request remains
 **unsent**.
+
+
+## Positive System ink observation and follow-up
+
+The user now reports test6 System ink works quite well during live writing.
+They observe disappearance around one second after pen-up and a fixed-width
+replacement without the native pressure variation. The diagnostic delayed replay
+until 1,000 ms while the native policy clears after 800 ms; replay was fixed-width.
+Test7 prepares completed Android ink immediately and preserves pressure variation
+with an explicitly estimated brush. Exact native pressure normalization/curve,
+smoothing and width units remain questions for the supported API contract.
+
+The user also reports loss of System ink selection when switching to Chrome in
+landscape split-screen. The manual diagnostic stopped on focus loss; test7 retains
+selection, removes the region while inactive, and resumes after focused stable
+geometry. Native libraries omitted by the first export are prioritized in a new
+explicit export for static inspection. This draft remains **unsent**.

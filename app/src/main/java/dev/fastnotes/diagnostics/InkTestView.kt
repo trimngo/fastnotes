@@ -9,6 +9,8 @@ import android.graphics.Path
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import java.util.Locale
+import kotlin.math.hypot
 
 /** Temporary scratch strokes only. This view never opens a sheet or uses NoteStore. */
 class InkTestView(context: Context) : View(context) {
@@ -17,18 +19,31 @@ class InkTestView(context: Context) : View(context) {
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
     }
     private val lines = Paint().apply { color = Color.LTGRAY; strokeWidth = 1f }
-    private val completed = ArrayList<Path>()
-    private var current: Path? = null
+    private val pressureInk = Paint(ink).apply { style = Paint.Style.FILL }
+    private data class ScratchStroke(val path: Path = Path(), val pressureAware: Boolean)
+    private val completed = ArrayList<ScratchStroke>()
+    private var current: ScratchStroke? = null
     private var pointer = -1
     private var committed = 0
     private var lastX = 0f
     private var lastY = 0f
+    private var lastRadius = 1f
     private var inside = false
     private var nativeSnapshot: Bitmap? = null
     private var captureNative: ((Canvas) -> Boolean)? = null
     private var nativePenDown: (() -> Boolean)? = null
     var firmwareTest = false
         private set
+    private var systemHandoff = false
+    val completedStrokes get() = completed.size
+    private var pressureSamples = 0L
+    private var minPressure = 0f
+    private var maxPressure = 0f
+    val handoffDescription get() = if (systemHandoff)
+        "Completed strokes at pen-up; pressure-aware replay, estimated 2–8 px; native curve unverified"
+        else if (firmwareTest) "App ink after one second of quiet" else "Android live drawing"
+    val pressureSummary get() = if (pressureSamples == 0L) "none" else
+        String.format(Locale.ROOT, "%d normalized samples, %.3f–%.3f", pressureSamples, minPressure, maxPressure)
     var samples = 0L
         private set
     var maxEventAgeMs = 0L
@@ -58,7 +73,18 @@ class InkTestView(context: Context) : View(context) {
 
     fun mode(firmware: Boolean) {
         captureNative = null; nativePenDown = null
+        systemHandoff = false
         clear(); firmwareTest = firmware
+    }
+    /** Firmware supplies live ink; Android prepares only completed strokes for its eventual clear. */
+    fun systemMode() { mode(true); systemHandoff = true }
+    /** Focus/pane changes cancel only unfinished ink; completed pressure outlines stay available. */
+    fun pauseCurrentSystemStroke() {
+        if (!systemHandoff) return
+        removeCallbacks(settle)
+        current = null; pointer = -1; inside = false
+        committed = completed.size
+        invalidate()
     }
     fun nativeMode(capture: (Canvas) -> Boolean, penDown: () -> Boolean) {
         mode(true)
@@ -69,6 +95,7 @@ class InkTestView(context: Context) : View(context) {
         removeCallbacks(settle)
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         samples = 0; maxEventAgeMs = 0
+        pressureSamples = 0; minPressure = 0f; maxPressure = 0f
         nativeSnapshot?.recycle(); nativeSnapshot = null
         invalidate()
     }
@@ -80,8 +107,8 @@ class InkTestView(context: Context) : View(context) {
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, lines); y += spacing }
         nativeSnapshot?.let { canvas.drawBitmap(it, 0f, 0f, null); return }
         val count = if (firmwareTest) committed else completed.size
-        for (index in 0 until count) canvas.drawPath(completed[index], ink)
-        if (!firmwareTest) current?.let { canvas.drawPath(it, ink) }
+        for (index in 0 until count) completed[index].let { canvas.drawPath(it.path, if (it.pressureAware) pressureInk else ink) }
+        if (!firmwareTest) current?.let { canvas.drawPath(it.path, ink) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -94,36 +121,64 @@ class InkTestView(context: Context) : View(context) {
             parent?.requestDisallowInterceptTouchEvent(true)
             removeCallbacks(settle)
             pointer = event.getPointerId(index)
-            current = Path(); inside = false
-            point(event.getX(index), event.getY(index), event.eventTime)
+            current = ScratchStroke(pressureAware = systemHandoff); inside = false
+            point(event.getX(index), event.getY(index), event.getPressure(index), event.eventTime)
         } else if (action == MotionEvent.ACTION_MOVE && pointer >= 0) {
             val pen = event.findPointerIndex(pointer)
             if (pen >= 0) {
                 for (history in 0 until event.historySize) point(event.getHistoricalX(pen, history),
-                    event.getHistoricalY(pen, history), event.getHistoricalEventTime(history))
-                point(event.getX(pen), event.getY(pen), event.eventTime)
+                    event.getHistoricalY(pen, history), event.getHistoricalPressure(pen, history), event.getHistoricalEventTime(history))
+                point(event.getX(pen), event.getY(pen), event.getPressure(pen), event.eventTime)
             }
         } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) &&
             event.getPointerId(index) == pointer) {
-            point(event.getX(index), event.getY(index), event.eventTime)
+            point(event.getX(index), event.getY(index), event.getPressure(index), event.eventTime)
             current?.let { completed.add(it) }
             current = null; pointer = -1; inside = false
-            if (firmwareTest) postDelayed(settle, 1000) else invalidate()
-            if (!firmwareTest) onStrokeFinished?.invoke()
+            if (systemHandoff) {
+                // Prepare the underlying Android frame before the firmware's 800 ms overlay clear.
+                // Never include the current stroke: live motion must still come from System ink.
+                committed = completed.size
+                invalidate()
+                onStrokeFinished?.invoke()
+            } else if (firmwareTest) postDelayed(settle, 1000)
+            else { invalidate(); onStrokeFinished?.invoke() }
         } else if (action == MotionEvent.ACTION_CANCEL) {
             current = null; pointer = -1; inside = false
-            if (firmwareTest) postDelayed(settle, 1000) else invalidate()
+            if (systemHandoff || !firmwareTest) invalidate() else postDelayed(settle, 1000)
         }
         return true
     }
 
-    private fun point(x: Float, y: Float, time: Long) {
+    private fun point(x: Float, y: Float, pressure: Float, time: Long) {
         if (samples >= 50_000) return
         samples++
         maxEventAgeMs = maxOf(maxEventAgeMs, (SystemClock.uptimeMillis() - time).coerceIn(0, 60_000))
         if (x < 0 || y < 0 || x >= width || y >= height) { inside = false; return }
-        val path = current ?: return
-        if (!inside) { path.moveTo(x, y); path.lineTo(x + 0.01f, y) }
+        val stroke = current ?: return
+        val path = stroke.path
+        if (stroke.pressureAware) {
+            val normalized = if (pressure.isFinite()) pressure.coerceIn(0f, 1f) else 0f
+            if (pressureSamples == 0L) { minPressure = normalized; maxPressure = normalized }
+            else { minPressure = minOf(minPressure, normalized); maxPressure = maxOf(maxPressure, normalized) }
+            pressureSamples++
+            // Independent replay estimate inspired by the service defaults, not its unknown JNI curve.
+            val radius = (2f + 6f * normalized) / 2f
+            if (inside) {
+                val distance = hypot(x - lastX, y - lastY)
+                if (distance > 0f) {
+                    val nx = (y - lastY) / distance
+                    val ny = (lastX - x) / distance
+                    path.moveTo(lastX + nx * lastRadius, lastY + ny * lastRadius)
+                    path.lineTo(x + nx * radius, y + ny * radius)
+                    path.lineTo(x - nx * radius, y - ny * radius)
+                    path.lineTo(lastX - nx * lastRadius, lastY - ny * lastRadius)
+                    path.close()
+                }
+            }
+            path.addCircle(x, y, radius, Path.Direction.CW)
+            lastRadius = radius
+        } else if (!inside) { path.moveTo(x, y); path.lineTo(x + 0.01f, y) }
         else if (x != lastX || y != lastY) path.lineTo(x, y)
         lastX = x; lastY = y; inside = true
         // Firmware mode deliberately never asks Android to show in-flight ink.

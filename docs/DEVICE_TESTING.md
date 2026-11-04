@@ -99,7 +99,45 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: system-owned ink (0.3.2-test6)
+## Current step: System ink completion, pressure and focus (0.3.2-test7)
+
+The user reports test6's live writing works quite well. Ink disappears roughly one
+second after pen-up, then returns without the original pressure variation. The
+firmware schedules native overlay clearing after 800 ms; test6 deliberately held
+app replay until one second of quiet and used a fixed 3 px path. Those are concrete
+handoff/appearance problems in that diagnostic, not evidence that live ink failed.
+
+1. Update through **Fastnotes Ink Test → Updates → Check now**, then select
+   **System ink**. Write a fast continuous stroke and lift the pen.
+2. Observe whether completed ink now stays visible through the next second.
+   Write short strokes rapidly in succession, then pause. Existing completed
+   strokes should remain while new strokes are provided by the firmware.
+3. Draw a light-to-firm-to-light stroke. Check whether width variation remains
+   after pen-up, and report any change in position, thickness, shape or a flash.
+   App replay uses Android pressure with an estimated 2–8 px range. The native
+   curve/units are not recovered, so exact brush matching is not claimed.
+4. Select the observed live-ink result, **Copy report**, and include what happened
+   after pen-up. The report now distinguishes immediate completion from older
+   delayed modes and includes only pressure counts/range, not stroke coordinates.
+5. Repeat in landscape and Chrome-left/Fastnotes-right split-screen. Tap Chrome,
+   then return to Fastnotes. System ink should pause while unfocused, keep its
+   selected mode and completed scratch ink, and resume automatically once the
+   pane has focus and stable bounds. Resize the divider and repeat. Explicitly
+   selecting Android pen or another test/navigation clears that resume intent.
+6. To investigate the exact native brush, open **API files → Save ZIP**, choose
+   Downloads and Save, then attach the new ZIP. The prior export omitted native
+   libraries because its code budget was consumed by DEX. Test7 prioritizes those
+   fixed library names and increases the combined code budget to 22 MiB; the
+   final ZIP remains limited to 24 MiB. Native files may expose the curve or may
+   delegate pressure handling elsewhere; exact recovery is not guaranteed.
+
+System ink now asks Android to prepare completed ink at pen-up; the firmware may
+still defer physical presentation. No current in-progress stroke is app drawn.
+Worker/reference comparisons retain their one-second quiet snapshots. The new
+handoff is still an in-memory scratchpad: saved notes and their format are
+unchanged. Original-pen eraser/notebook integration remains separate.
+
+## Earlier system-owned ink probe (0.3.2-test6)
 
 The uploaded firmware ZIP supplied real framework and service implementations.
 The view API tested in test2 is a no-op. Test6 uses the actual system-service
@@ -125,7 +163,8 @@ See [the exact findings and protocol limits](EXACT_FIRMWARE_FINDINGS.md).
 
 Cleanup requests removal of the same rectangle on focus loss, pause, resize and
 exit. Native cleanup runs asynchronously after the service accepts removal. Failed
-cleanup ownership survives Activity recreation in the same process and remains visible and blocks another test, Android ink, Updates and export
+cleanup ownership survives Activity recreation in the same process. It remains
+visible and blocks another test, Android ink, Updates and export
 until removal succeeds. The ROM contains an app-death cleanup hook, but its
 upstream invocation is not established by the captured classes; crash cleanup is
 not guaranteed by these software checks. No global drawing, pen-width, tool,

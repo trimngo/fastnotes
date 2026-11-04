@@ -1,3 +1,63 @@
+# 0.3.2-test7 completion, focus and native export validation
+
+Software checks performed on 4 November 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **113 tests passed**, no failures, errors or skips.
+Lint has no errors (50 warnings and 1 hint);
+debug/release variants compile. Added/updated checks cover:
+
+- System-only pen-up completion is drawable immediately, remains available across
+  the firmware's 800 ms clear and the old 1,000 ms boundary, and never exposes
+  current moving ink during a forced redraw.
+- Rapid successive strokes and cancellation retain prior completed ink. Batched
+  historical pressure affects the completed outline; later strokes cannot change
+  it. Nonfinite/out-of-range pressure cannot produce unbounded widths.
+- System selection survives temporary focus/pause and geometry changes, without
+  registering while unfocused/paused or before stable bounds. Explicit alternate
+  modes/navigation clear automatic restoration. Failed cleanup still blocks new
+  registration and remains process-owned across Activity recreation.
+- Native evidence is prioritized over DEX and candidate limits; ABI labels and
+  hashes identify artifacts. ELF export cannot suppress needed VDEX fallback.
+  Actual bytes stay charged to the shared scan budget after failed/oversized reads.
+- Earlier one-second native quiet snapshots, scoped Parcel protocol, Updates,
+  saved-note isolation and evidence document-picker recovery continue passing.
+
+The user reports test6 live writing works quite well, with disappearance roughly
+one second after pen-up and fixed-width replay. The firmware clear is scheduled
+at 800 ms, while test6's app replay waited 1,000 ms. Test7 removes that artificial
+System ink delay and preserves Android pressure variation. It also addresses the
+reported landscape split-screen focus-selection loss. Physical continuity, exact
+brush appearance, first-stroke recovery and split-screen performance still require
+the tablet. Software drawability is not a panel-completion measurement.
+
+The pressure brush uses an estimated 2–8 px range; JNI normalization, curve and
+smoothing remain unknown. The revised explicit export prioritizes native libraries
+and allows 22 MiB code/24 MiB ZIP without new permissions, private-data access or
+automatic upload. Static native inspection may reveal the curve or show pressure
+is delegated elsewhere. No OEM binary is executed or bundled.
+
+The notebook renderer, note format/default backend and original-pen eraser
+integration are unchanged. This remains an in-memory System ink scratchpad.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test7` (code 11)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- System protocol accepts only Viwoods AiPaper / API 33 / build 3.15.15
+- APK bytes: `8094904`
+- APK SHA-256: `71c9d042e5efd90f8ec6ba9433c4c19f7094b13aa3ea8f0c723e6589d5b4aef3`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [device checks](DEVICE_TESTING.md), [exact-firmware findings](EXACT_FIRMWARE_FINDINGS.md)
+and [native evidence export](FIRMWARE_API_EVIDENCE.md).
+
+---
+
 # 0.3.2-test6 system ink service validation
 
 Software checks performed on 4 November 2026:

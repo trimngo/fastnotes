@@ -4,7 +4,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
-import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -51,12 +50,36 @@ internal fun enoteDefinitions(bytes: ByteArray): List<String> = runCatching {
 
 data class FirmwareEvidenceSummary(val codeFiles: Int, val bytes: Long, val inventoryOnly: Boolean)
 
+/** Charge bytes as they are read, including failed/oversized entries with false ZIP sizes. */
+internal class EvidenceScanBudget(private val maximum: Long) {
+    var bytes = 0L
+        private set
+
+    fun read(input: InputStream, maxEntryBytes: Int): ByteArray {
+        require(maxEntryBytes > 0)
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(32 * 1024)
+        while (true) {
+            val remaining = maximum - bytes
+            check(remaining > 0) { "Scan budget exhausted" }
+            // One entry-limit sentinel can detect false sizes, but never exceed the scan budget.
+            val request = minOf(buffer.size.toLong(), remaining, maxEntryBytes.toLong() - out.size() + 1).toInt()
+            val read = input.read(buffer, 0, request)
+            if (read < 0) return out.toByteArray()
+            check(read > 0) { "Input made no progress" }
+            bytes += read
+            check(read <= maxEntryBytes - out.size()) { "Entry exceeds limit" }
+            out.write(buffer, 0, read)
+        }
+    }
+}
+
 /** Only explicit system roots can supply bytes; no app, note, clipboard or shared-storage scan. */
 class FirmwareEvidence internal constructor(
     private val roots: List<File>,
     private val candidates: () -> List<File>,
     private val maxEntryBytes: Int = 20 * 1024 * 1024,
-    private val maxCodeBytes: Int = 20 * 1024 * 1024,
+    private val maxCodeBytes: Int = 22 * 1024 * 1024,
     private val maxScanBytes: Long = 64L * 1024 * 1024
 ) {
     constructor() : this(systemRoots(), ::systemCandidates)
@@ -66,7 +89,7 @@ class FirmwareEvidence internal constructor(
         val partial = File(destination.parentFile, destination.name + ".part")
         val artifacts = JSONArray()
         val inventory = JSONArray()
-        var scanned = 0L
+        val scan = EvidenceScanBudget(maxScanBytes)
         var exported = 0
         var count = 0
         try {
@@ -75,9 +98,9 @@ class FirmwareEvidence internal constructor(
                     try { zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry() }
                     catch (failure: java.io.IOException) { throw EvidenceWriteFailure(failure) }
                 }
-                fun include(source: String, label: String, kind: String, data: ByteArray, classes: List<String> = emptyList()) {
+                fun include(source: String, label: String, kind: String, data: ByteArray, classes: List<String> = emptyList()): Boolean {
                     if (data.size > maxCodeBytes - exported) {
-                        inventory.put(JSONObject().put("source", source).put("status", "export budget reached")); return
+                        inventory.put(JSONObject().put("source", source).put("status", "export budget reached")); return false
                     }
                     val safeLabel = label.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
                     val name = "api/${++count}-$safeLabel"
@@ -85,13 +108,37 @@ class FirmwareEvidence internal constructor(
                     exported += data.size
                     artifacts.put(JSONObject().put("entry", name).put("source", source).put("kind", kind)
                         .put("bytes", data.size).put("sha256", sha256(data)).put("classes", JSONArray(classes)))
+                    return true
                 }
                 val allowedRoots = roots.map { it.canonicalFile }
                 val files = candidates().mapNotNull { candidate ->
                     val file = runCatching { candidate.canonicalFile }.getOrNull() ?: return@mapNotNull null
                     file.takeIf { f -> allowedRoots.any { root -> f.path.startsWith(root.path + File.separator) } }
-                }.distinctBy { it.path }.take(64)
-                // DEX before optional native/preoptimized code: preserve the most useful API bodies.
+                }.distinctBy { it.path }.sortedBy { if (it.extension == "so") 0 else 1 }.take(64)
+                fun includeBinary(file: File) {
+                    val item = JSONObject().put("source", file.path).put("bytes", file.length())
+                        .put("present", file.isFile).put("readable", file.canRead())
+                    inventory.put(item)
+                    if (!file.isFile || !file.canRead()) { item.put("status", "missing or unreadable"); return }
+                    if (file.length() !in 4L..maxEntryBytes.toLong() || scan.bytes + file.length() > maxScanBytes ||
+                        file.length() > maxCodeBytes - exported) { item.put("status", "size or budget limit"); return }
+                    try {
+                        val data = file.inputStream().use { scan.read(it, maxEntryBytes) }
+                        val valid = if (file.extension == "so") data.take(4) == listOf<Byte>(127, 69, 76, 70)
+                            else data.take(4) == "vdex".toByteArray().toList()
+                        if (valid) {
+                            val label = (file.parentFile?.name ?: "system") + "-" + file.name
+                            val included = include(file.path, label, if (file.extension == "so") "native-library" else "vdex", data)
+                            item.put("status", if (included) "included" else "export budget reached")
+                        } else item.put("status", "unrecognized header")
+                    } catch (failure: Exception) {
+                        if (failure is EvidenceWriteFailure) throw failure
+                        item.put("status", "read failed: " + failure.javaClass.simpleName)
+                    }
+                }
+                // Preserve the small native brush implementation before scanning large DEX archives.
+                files.filter { it.extension == "so" }.forEach(::includeBinary)
+                var haveDex = false
                 for (file in files.filter { it.extension == "jar" }) {
                     val item = JSONObject().put("source", file.path).put("bytes", file.length())
                         .put("present", file.isFile).put("readable", file.canRead())
@@ -108,15 +155,14 @@ class FirmwareEvidence internal constructor(
                                 val entry = entries.nextElement()
                                 if (!entry.name.matches(Regex("classes[0-9]*\\.dex"))) continue
                                 dexEntries++
-                                if (entry.size !in 112L..maxEntryBytes.toLong() || scanned + entry.size > maxScanBytes) {
+                                if (entry.size !in 112L..maxEntryBytes.toLong() || scan.bytes + entry.size > maxScanBytes) {
                                     item.put("skippedOversizeOrBudget", true); continue
                                 }
-                                val data = archive.getInputStream(entry).use { readBounded(it, maxEntryBytes) }
-                                scanned += data.size
+                                val data = archive.getInputStream(entry).use { scan.read(it, maxEntryBytes) }
                                 val classes = enoteDefinitions(data)
                                 if (classes.isNotEmpty()) {
                                     defined += classes.size
-                                    include(file.path + "!/" + entry.name, file.nameWithoutExtension + "-" + entry.name, "dex", data, classes)
+                                    if (include(file.path + "!/" + entry.name, file.nameWithoutExtension + "-" + entry.name, "dex", data, classes)) haveDex = true
                                 }
                             }
                         }
@@ -126,31 +172,10 @@ class FirmwareEvidence internal constructor(
                         item.put("status", "read failed: " + failure.javaClass.simpleName)
                     }
                 }
-                val haveDex = artifacts.length() > 0
-                for (file in files.filter { it.extension == "so" || (!haveDex && it.extension == "vdex") }) {
-                    val item = JSONObject().put("source", file.path).put("bytes", file.length())
-                        .put("present", file.isFile).put("readable", file.canRead())
-                    inventory.put(item)
-                    if (!file.isFile || !file.canRead()) { item.put("status", "missing or unreadable"); continue }
-                    if (file.length() !in 4L..maxEntryBytes.toLong() || scanned + file.length() > maxScanBytes ||
-                        file.length() > maxCodeBytes - exported) { item.put("status", "size or budget limit"); continue }
-                    try {
-                        val data = file.inputStream().use { readBounded(it, maxEntryBytes) }
-                        scanned += data.size
-                        val valid = if (file.extension == "so") data.take(4) == listOf<Byte>(127, 69, 76, 70)
-                            else data.take(4) == "vdex".toByteArray().toList()
-                        if (valid) {
-                            include(file.path, file.name, if (file.extension == "so") "native-library" else "vdex", data)
-                            item.put("status", "included")
-                        } else item.put("status", "unrecognized header")
-                    } catch (failure: Exception) {
-                        if (failure is EvidenceWriteFailure) throw failure
-                        item.put("status", "read failed: " + failure.javaClass.simpleName)
-                    }
-                }
+                if (!haveDex) files.filter { it.extension == "vdex" }.forEach(::includeBinary)
                 add("ink-report.txt", report.take(64 * 1024).toByteArray(Charsets.UTF_8))
                 val manifest = JSONObject().put("schema", 1).put("device", device).put("artifacts", artifacts)
-                    .put("inventory", inventory).put("codeFiles", count).put("codeBytes", exported)
+                    .put("inventory", inventory).put("codeFiles", count).put("codeBytes", exported).put("scanBytes", scan.bytes)
                     .put("note", "System API implementation evidence. No note files or scratch coordinates are collected. No automatic upload.")
                 add("manifest.json", manifest.toString(2).toByteArray(Charsets.UTF_8))
             }
@@ -177,18 +202,7 @@ class FirmwareEvidence internal constructor(
             val libraries = roots.filter { it.name.startsWith("lib") }.flatMap { root ->
                 listOf("libpaintworker.so", "libenote.so", "libenotewriting.so").map { File(root, it) }
             }
-            return frameworks + boot + libraries
-        }
-        private fun readBounded(input: InputStream, max: Int): ByteArray {
-            val out = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(32 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                check(read <= max - out.size()) { "Entry exceeds limit" }
-                out.write(buffer, 0, read)
-            }
-            return out.toByteArray()
+            return libraries + frameworks + boot
         }
         private fun sha256(data: ByteArray) = MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
     }

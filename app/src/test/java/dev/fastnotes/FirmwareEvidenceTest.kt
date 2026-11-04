@@ -20,7 +20,10 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FilterInputStream
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
@@ -92,11 +95,12 @@ class FirmwareEvidenceTest {
         assertFalse(result.inventoryOnly)
         val info = manifest(output)
         val artifacts = info.getJSONArray("artifacts")
-        assertEquals("dex", artifacts.getJSONObject(0).getString("kind"))
+        assertEquals("native-library", artifacts.getJSONObject(0).getString("kind"))
+        assertEquals("dex", artifacts.getJSONObject(1).getString("kind"))
         val expected = MessageDigest.getInstance("SHA-256").digest(code).joinToString("") { "%02x".format(it) }
-        assertEquals(expected, artifacts.getJSONObject(0).getString("sha256"))
+        assertEquals(expected, artifacts.getJSONObject(1).getString("sha256"))
         ZipFile(output).use { zip ->
-            assertEquals(code.toList(), zip.getInputStream(zip.getEntry(artifacts.getJSONObject(0).getString("entry"))).readBytes().toList())
+            assertEquals(code.toList(), zip.getInputStream(zip.getEntry(artifacts.getJSONObject(1).getString("entry"))).readBytes().toList())
             assertFalse(zip.entries().toList().any { it.name.contains("..") })
             assertEquals("diagnostic counters", zip.getInputStream(zip.getEntry("ink-report.txt")).bufferedReader().readText())
         }
@@ -134,6 +138,61 @@ class FirmwareEvidenceTest {
         val output = File(app.cacheDir, "preoptimized.zip")
         assertEquals(1, FirmwareEvidence(listOf(system), { listOf(framework, vdex) }).write(output, JSONObject(), "report").codeFiles)
         assertEquals("vdex", manifest(output).getJSONArray("artifacts").getJSONObject(0).getString("kind"))
+    }
+
+    @Test fun nativeLibrariesHavePriorityOverDexExportAndCandidateLimits() {
+        val system = root()
+        val code = dex(listOf(enote))
+        val framework = jar(File(system, "framework.jar"), "classes.dex" to code)
+        val lib64 = File(system, "lib64").apply { mkdirs() }
+        val library = File(lib64, "libpaintworker.so").apply { writeBytes(byteArrayOf(127, 69, 76, 70, 1, 2, 3, 4)) }
+        val output = File(app.cacheDir, "native-priority.zip")
+        // There is room for either DEX or native code, but not both.
+        assertEquals(1, FirmwareEvidence(listOf(system), { listOf(framework, library) }, maxCodeBytes = code.size)
+            .write(output, JSONObject(), "report").codeFiles)
+        val artifact = manifest(output).getJSONArray("artifacts").getJSONObject(0)
+        assertEquals("native-library", artifact.getString("kind"))
+        assertEquals(library.canonicalPath, artifact.getString("source"))
+        assertTrue(artifact.getString("entry").endsWith("lib64-libpaintworker.so"))
+
+        val many = (0..69).map { File(system, "absent-$it.jar") } + library
+        val capped = File(app.cacheDir, "native-candidate-priority.zip")
+        assertEquals(1, FirmwareEvidence(listOf(system), { many }).write(capped, JSONObject(), "report").codeFiles)
+        assertEquals(library.canonicalPath, manifest(capped).getJSONArray("artifacts").getJSONObject(0).getString("source"))
+    }
+
+    @Test fun nativeCodeDoesNotSuppressVdexFallbackWhenNoDexWasExported() {
+        val system = root()
+        val framework = jar(File(system, "framework.jar"), "META-INF/MANIFEST.MF" to "stripped".toByteArray())
+        val library = File(system, "libpaintworker.so").apply { writeBytes(byteArrayOf(127, 69, 76, 70, 1, 2, 3, 4)) }
+        val vdex = File(system, "boot-framework.vdex").apply { writeBytes("vdex019".toByteArray()) }
+        val output = File(app.cacheDir, "native-and-preoptimized.zip")
+        assertEquals(2, FirmwareEvidence(listOf(system), { listOf(framework, library, vdex) })
+            .write(output, JSONObject(), "report").codeFiles)
+        val artifacts = manifest(output).getJSONArray("artifacts")
+        assertEquals("native-library", artifacts.getJSONObject(0).getString("kind"))
+        assertEquals("vdex", artifacts.getJSONObject(1).getString("kind"))
+    }
+
+    @Test fun actualReadBytesStayChargedAfterOversizedEntriesAndExhaustTheSharedScanBudget() {
+        class Counted(source: InputStream) : FilterInputStream(source) {
+            var consumed = 0
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int = super.read(bytes, offset, length).also {
+                if (it > 0) consumed += it
+            }
+        }
+        val scan = EvidenceScanBudget(100)
+        val first = Counted(ByteArrayInputStream(ByteArray(200)))
+        assertThrows(IllegalStateException::class.java) { scan.read(first, 50) }
+        assertEquals(51, first.consumed) // One bounded entry-overflow sentinel is charged too.
+        assertEquals(51L, scan.bytes)
+        val second = Counted(ByteArrayInputStream(ByteArray(200)))
+        assertThrows(IllegalStateException::class.java) { scan.read(second, 200) }
+        assertEquals(49, second.consumed)
+        assertEquals(100L, scan.bytes)
+        val third = Counted(ByteArrayInputStream(ByteArray(200)))
+        assertThrows(IllegalStateException::class.java) { scan.read(third, 200) }
+        assertEquals(0, third.consumed)
     }
 
     @Test fun controllerWaitsForAChosenDestinationAndRecoversAfterProcessRecreation() {

@@ -1,12 +1,16 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test6 tests the system-owned ink path** found in the
-user's exact firmware export. The earlier worker and callback modes both remain
-laggy. Firmware 3.15.15 implements the previously tested view API as an empty
-method, while its system service has a separate scoped AutoDraw route. **Ink Test
-→ System ink** requests that route for the visible scratchpad. Notebook rendering
-is unchanged; physical performance of this new route is unverified.
+keeps notes offline. **0.3.2-test7 improves System ink completion and focus recovery**. The
+user reports that test6's system-owned live writing works quite well, then
+disappears and returns with a different, fixed-width appearance after pen-up.
+The scratchpad now prepares completed strokes immediately at pen-up and preserves
+Android pressure variation. Its replay brush is an estimate; the firmware's
+native pressure curve and physical handoff still need verification. The earlier
+worker/callback comparisons and notebook renderer are unchanged. System ink is
+remembered across focus loss and resumes when the pane is ready again. API-file
+export now prioritizes the native libraries needed to investigate exact pressure
+matching.
 See [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
 [the investigation](docs/INK_INVESTIGATION.md).
 
@@ -43,8 +47,11 @@ See [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
   process. It offers Android pen, System ink, Worker refresh and Reference callback.
   System ink uses an exact firmware-pinned service protocol to register only the
   visible scratchpad, without app-side native bitmap/input initialization. The
-  two older bitmap modes retain clipped refresh requests. App-drawn native snapshots
-  wait one second after pen-up. Choose **Smooth**, **Gaps / lag** or **No live ink**
+  two older bitmap modes retain clipped refresh requests. Worker/reference
+  snapshots wait one second after pen-up. System ink instead
+  redraws completed strokes at pen-up using current and historical pressure
+  samples; its in-progress stroke remains hidden from app drawing. Choose
+  **Smooth**, **Gaps / lag** or **No live ink**
   before Copy report. **Updates** is directly accessible from this screen.
   The additional **Fastnotes Ink Test** launcher icon opens that test directly,
   so the existing note renderer need not run first.

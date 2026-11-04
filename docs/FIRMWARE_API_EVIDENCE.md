@@ -8,13 +8,14 @@ or obtaining the supported vendor integration contract.
 
 ## Save the ZIP
 
-1. Update to **0.3.2-test5** through Ink Test → Updates → Check now.
+1. Update to **0.3.2-test7** through Ink Test → Updates → Check now.
 2. Open **Fastnotes Ink Test → API files → Save ZIP**.
 3. Choose **Downloads** in Android's file picker and tap **Save**.
 4. Attach **fastnotes-api-evidence.zip** in the investigation conversation.
 
-This update collects implementation evidence. The renderer is unchanged. If API
-code is unavailable, the ZIP still contains the report and readable-file inventory;
+The export is separate from the pen test. Test7 prioritizes native libraries to
+investigate the exact pressure curve; the previous ZIP omitted them after DEX
+consumed the code budget. If API code is unavailable, the ZIP still contains the report and readable-file inventory;
 the export screen explicitly identifies that case.
 
 ## What is collected
@@ -46,11 +47,13 @@ may synchronize that destination according to its own settings.
 ## Bounds and lifecycle
 
 The scan considers at most 64 canonical candidates and 4,096 entries per JAR,
-reads at most 64 MiB, and limits any selected code artifact and combined code to
-20 MiB. The final ZIP must be at most 24 MiB. DEX tables/string reads and report
+reads at most 64 MiB of actual code bytes (including failed reads), limits each
+code artifact to 20 MiB, and limits combined code to 22 MiB. The final ZIP must
+be at most 24 MiB. DEX tables/string reads and report
 sizes are bounded; ZIP member names are generated rather than extracted paths.
 Oversized/unreadable/nonstandard files are recorded as unavailable or skipped.
-Successful API-code extraction on the physical ROM remains unverified until export.
+The first export successfully included framework/service DEX. Native-library
+extraction with the revised priority remains unverified until the new export.
 
 Preparation runs on a separate worker after native ink is stopped. A private
 `.part` file is renamed only after the ZIP closes successfully. The controller
@@ -63,3 +66,9 @@ Inspect user-supplied firmware archives in the research workspace. Do not commit
 them or extracted vendor implementation files to the public app repository or
 bundle them in an APK. Publish independently written integration changes and
 source-contract findings as appropriate.
+
+
+Native files are inspected statically for the pressure implementation. Their
+presence does not guarantee the exact curve is recoverable: libpaintworker may
+forward pressure into another dependency, kernel driver or controller firmware.
+No OEM library is loaded into the app or executed by the investigation tools.

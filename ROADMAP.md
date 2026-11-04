@@ -175,3 +175,25 @@ The order among the later ideas is undecided. The first priority remains
   focus/resize/Updates cleanup and unchanged note isolation in software.
 - Pending: device confirmation of connection and live drawing, then landscape/
   Chrome split-screen. Do not promote to the notebook before these observations.
+
+
+### System ink handoff and pressure (0.3.2-test7)
+
+- User confirms test6 live writing works quite well, then disappears around one
+  second after lifting and returns without pressure variation. No geometry/report
+  was supplied for that observation; do not infer split-screen verification.
+- Replace System ink's diagnostic one-second holdback with completed-stroke
+  presentation requested at pen-up. Keep current ink hidden and earlier native
+  comparison timing unchanged.
+- Replay completed Android strokes with pressure variation, including historical
+  samples, using an explicitly estimated brush. Exact native calibration remains
+  unknown; notebook format/backend and original-pen eraser integration are separate.
+- Pending physical verification: pen-up continuity, pressure/shape matching,
+  rapid successive strokes, both landscape directions and Chrome split-screen.
+
+- Latest steering for test7: restore System ink automatically after split-screen
+  focus return once the pane is ready, keeping completed scratch ink across
+  ordinary focus changes. Explicit mode/navigation choices clear auto-resume.
+- Prioritize known native libraries in explicit API export with 22 MiB combined
+  code/24 MiB final ZIP, so exact pressure-curve investigation can proceed. Native
+  code may delegate elsewhere; identical replay remains unproven.

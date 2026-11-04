@@ -384,3 +384,72 @@ Next device evidence: System ink connection/status, what appears while rapidly
 writing in portrait, and, only if successful, both landscape rotations and Chrome
 split-screen. Original-pen erasing and durable notebook handoff need separate
 integration after a verified live route; this scratch test does not claim either.
+
+
+## Test6 live ink result and test7 pen-up handoff
+
+The user reports that System ink **"works quite well" during live writing**.
+They clarified that the ink disappears about one second **after lifting** the
+pen, then returns with lines that lack the original pressure-sensitive appearance.
+This is the first positive live-ink report for the distinct system-owned route.
+The user did not supply a new Copy report with this observation, so orientation,
+split-screen state and Android pressure/sample counts for that run are not inferred.
+
+Two concrete scratchpad behaviors explain the reported transition: the exact
+firmware schedules overlay clear at pen-up + 800 ms, while test6 waited one second
+before exposing completed Android paths, and those paths all used a fixed 3 px
+stroke. The display timing is consistent with this gap; actual panel timing has
+not been measured. Firmware native rendering and Android replay are separate.
+
+Test7 keeps the same scoped service registration and changes only System ink's
+scratchpad handoff. On Android pen-up it immediately makes the completed stroke
+available to Android drawing and requests a frame, before the expected native
+clear. Current in-progress paths remain hidden even during unrelated redraws or
+the next rapid stroke. Cancellation drops only the current incomplete stroke.
+Older worker/reference modes retain their existing one-second quiet snapshots.
+
+System replay now consumes current and historical Android pressure samples and
+builds a bounded variable-width outline per completed stroke. Finite pressure is
+clamped to the nominal 0–1 Android range and mapped to an **estimated 2–8 px**
+width. This range is inspired by the captured service's default width arguments,
+not recovered units or calibration. The JNI pressure curve, smoothing and any
+global width changes by other apps remain unknown. Pressure variation is retained;
+identical appearance to firmware ink is not established. Replay contains no app-
+drawn moving stroke, per-sample Binder calls or native bitmap initialization.
+
+Reports identify the handoff policy and aggregate pressure sample count/range,
+without saved notes, stroke coordinates or pressure traces. Saved-note rendering,
+file format and default backend are unchanged. Next device check: disappearance
+through pen-up + one second, pressure/shape changes, rapid successive strokes,
+then both landscapes and Chrome split-screen. A successful software build does
+not establish a gap-free physical handoff or an exact pressure-curve match.
+
+
+### Split-screen focus recovery and native brush evidence
+
+The user also reported that landscape split-screen returned to Android pen after
+switching focus to Chrome and did not restore System ink on returning. Test6 did
+this deliberately as a manual diagnostic. Test7 remembers an explicitly selected
+System ink mode across focus loss, pause and pane changes, removes its region
+while inactive, preserves completed scratch replay on ordinary focus changes,
+and resumes only when focused/resumed with stable visible bounds. Choosing a
+different mode or navigating away clears the resume intent. Cleanup failures
+remain owned and must be resolved before another region is added. Native worker/
+reference comparisons retain their manual restart behavior.
+
+The user asked whether the exact pressure curve could be recovered from firmware.
+The Java wrappers simply forward pressure into JNI; `libpaintworker.so` loads the
+native implementation. Its two readable copies (64-bit 170,576 bytes, 32-bit
+121,756 bytes) were listed but omitted by the original 20 MiB code/64 MiB scan
+budgets after DEX-first inspection. Test7 prioritizes known native libraries and
+allows 22 MiB combined code, with the final ZIP still limited to 24 MiB, so a new
+explicit export can supply them alongside the existing DEX. Actual scan bytes
+are bounded even for malformed or failed reads. No new path outside the existing
+system-root allowlist, permission, native execution or upload is introduced.
+
+Inspect the new library statically for ELF dependencies, JNI entry points,
+pressure conversion and brush helpers. It may contain the pressure curve, or
+forward pressure to another dependency, driver or T1000 firmware; exact recovery
+is not promised. Android/native pressure scaling and smoothing also affect an
+identical visual replay. Until that evidence arrives, the app brush remains an
+explicit estimate. User-provided binaries remain outside the public repository.

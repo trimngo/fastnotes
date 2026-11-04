@@ -35,18 +35,34 @@ class InkTestActivity : Activity() {
     private lateinit var observations: RadioGroup
     private data class Geometry(val canvas: Rect, val visible: Rect, val display: Rect, val orientation: Int, val rotation: Int)
     private var registeredGeometry: Geometry? = null
+    private var lastDrawGeometry: Geometry? = null
+    private var stableGeometry: Geometry? = null
+    private var resumed = false
+    private var systemSelected = false
+    private var systemResumePending = false
+    private var systemStartFailed = false
     private var oldRun = ""
     private var apiReport = ""
     private var modeLabel = "Android pen"
     private var observed = "Not recorded"
     private val runs = ArrayDeque<String>()
     private val geometryObserver = ViewTreeObserver.OnPreDrawListener {
-        if (registeredGeometry != null && geometry() != registeredGeometry) stopTest("Pane changed; select a native test again.")
+        val current = geometry()
+        stableGeometry = current?.takeIf { it == lastDrawGeometry && !paper.isLayoutRequested }
+        lastDrawGeometry = current
+        if (registeredGeometry != null && current != registeredGeometry) {
+            if (systemSelected) pauseSystemTest("System ink paused while the writing area changes.")
+            else stopTest("Pane changed; select a native test again.")
+        }
+        if (systemResumePending) resumeSystemTest()
         true
     }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        systemSelected = state?.getBoolean("systemSelected") ?: false
+        systemStartFailed = state?.getBoolean("systemStartFailed") ?: false
+        systemResumePending = systemSelected && !systemStartFailed
         oldRun = InkProbeLog.read(this)
         val app = application as FastnotesApp
         log = app.inkProbeLog
@@ -72,7 +88,7 @@ class InkTestActivity : Activity() {
             }, LinearLayout.LayoutParams(0, dp(48), 1f)) }
             root.addView(controls)
         }
-        row("Back" to { finish() }, "Updates" to {
+        row("Back" to { stopTest("Closing the ink test."); finish() }, "Updates" to {
             if (stopTest("Opening app updates…")) startActivity(Intent(this, UpdateActivity::class.java))
         }, "API files" to {
             val currentReport = report()
@@ -89,7 +105,7 @@ class InkTestActivity : Activity() {
             "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. Try System ink with fast pen strokes. It requests the firmware’s own ink inside this area. App ink waits one second after pen-up. Record what you saw while writing, then Copy report. Other modes retain the earlier comparisons."
+            text = "Temporary scratchpad. System ink provides live writing; the app redraws completed strokes at pen-up with pressure variation. Watch the pen-up transition, then Copy report. Worker and Reference modes keep their earlier one-second delay."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -118,8 +134,14 @@ class InkTestActivity : Activity() {
         }
         root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80)))
         setContentView(root)
+        if (systemSelected) {
+            paper.systemMode()
+            modeLabel = "System ink"
+            status.text = "System ink paused; waiting for the writing area."
+        }
         if (systemProbe.hasRegistration) {
-            paper.mode(true)
+            systemResumePending = false
+            if (!systemSelected) paper.mode(true)
             modeLabel = "Cleanup pending"
             status.text = systemProbe.status
         }
@@ -143,24 +165,85 @@ class InkTestActivity : Activity() {
     }
 
     private fun startSystemTest() {
-        if (!stopTest("Preparing System ink…")) return
+        if (!systemSelected) paper.systemMode()
+        systemSelected = true
+        systemStartFailed = false
+        if (!stopTest("Preparing System ink…", retainSystem = true)) return
         modeLabel = "System ink"
         resetObservation()
-        val geometry = geometry()
-        if (geometry == null || !hasWindowFocus()) {
-            status.text = "Tap this pane, then select the test again."
+        paper.systemMode()
+        systemResumePending = true
+        // A deliberate button selection can use the current laid-out pane. Automatic
+        // restoration below requires the independently observed stable geometry.
+        val current = geometry()
+        if (resumed && hasWindowFocus() && current != null) registerSystemTest(current)
+        else resumeSystemTest()
+    }
+
+    private fun registerSystemTest(current: Geometry) {
+        systemResumePending = false
+        if (systemProbe.start(current.visible)) {
+            registeredGeometry = current
+            modeLabel = "System ink"
+            status.text = "System ink requested. Look for complete ink while moving, then record the result."
+        } else {
+            registeredGeometry = null
+            systemStartFailed = true
+            status.text = "Select System ink to retry. ${systemProbe.status}"
+        }
+    }
+
+    private fun resumeSystemTest(retryCleanup: Boolean = false) {
+        if (!systemSelected || !resumed || !hasWindowFocus() || registeredGeometry != null) return
+        if (systemProbe.hasRegistration) {
+            if (!retryCleanup) return
+            if (!systemProbe.stop()) {
+                systemResumePending = false
+                status.text = systemProbe.status
+                return
+            }
+        }
+        if (systemStartFailed) {
+            systemResumePending = false
+            status.text = "Select System ink to retry. ${systemProbe.status}"
             return
         }
-        if (systemProbe.start(geometry.visible)) {
-            registeredGeometry = geometry
-            paper.mode(true)
-            status.text = "System ink requested. Look for complete ink while moving, then record the result."
-        } else status.text = systemProbe.status
+        val current = geometry()
+        if (current == null || current != stableGeometry || paper.isLayoutRequested) {
+            systemResumePending = true
+            status.text = "System ink paused; waiting for the writing area."
+            if (current != null) paper.postInvalidateOnAnimation()
+            return
+        }
+        registerSystemTest(current)
+    }
+
+    private fun pauseSystemTest(message: String) {
+        systemResumePending = !systemStartFailed
+        if (systemStartFailed && !systemProbe.hasRegistration) {
+            paper.pauseCurrentSystemStroke()
+            status.text = "Select System ink to retry. ${systemProbe.status}"
+            return
+        }
+        // A prior failed removal has already retained ownership. Do not retry IPC
+        // on every draw, or a second loss callback; focus gain/manual retry can try once.
+        if (registeredGeometry == null && systemProbe.hasRegistration) {
+            systemResumePending = false
+            paper.pauseCurrentSystemStroke()
+            status.text = systemProbe.status
+            return
+        }
+        if (!stopTest(message, retainSystem = true)) systemResumePending = false
     }
 
     private fun resetObservation() { observations.clearCheck(); observed = "Not recorded" }
 
-    private fun stopTest(message: String): Boolean {
+    private fun stopTest(message: String, retainSystem: Boolean = false): Boolean {
+        if (!retainSystem) {
+            systemSelected = false
+            systemResumePending = false
+            systemStartFailed = false
+        }
         if (!::nativeProbe.isInitialized) return true
         if (::paper.isInitialized && (paper.samples > 0 || nativeProbe.active || nativeProbe.samples > 0 || systemProbe.hasRegistration)) {
             val summary = stats() + "; user observed: $observed" +
@@ -173,8 +256,10 @@ class InkTestActivity : Activity() {
         nativeProbe.stop()
         val released = systemProbe.stop()
         registeredGeometry = null
-        if (::paper.isInitialized) paper.mode(!released)
-        modeLabel = "Idle (select a test)"
+        if (::paper.isInitialized) {
+            if (retainSystem) paper.pauseCurrentSystemStroke() else paper.mode(!released)
+        }
+        modeLabel = if (retainSystem) "System ink" else "Idle (select a test)"
         if (::status.isInitialized) status.text = if (released) message else systemProbe.status
         return released
     }
@@ -195,7 +280,9 @@ class InkTestActivity : Activity() {
     }
 
     private fun stats() = "$modeLabel: ${paper.samples} Android samples; max event age ${paper.maxEventAgeMs} ms. " +
-        (if (nativeProbe.active) "Native accepted=${nativeProbe.samples}. " else "") + "Timing excludes visible panel latency."
+        (if (nativeProbe.active) "Native accepted=${nativeProbe.samples}. " else "") +
+        (if (modeLabel == "System ink") "Completed=${paper.completedStrokes}; pressure: ${paper.pressureSummary}. " else "") +
+        "Timing excludes visible panel latency."
 
     private fun report(): String = buildString {
         append("Fastnotes ${BuildConfig.VERSION_NAME} ink investigation\n")
@@ -206,6 +293,8 @@ class InkTestActivity : Activity() {
         append("Canvas: ${geometry?.canvas?.toShortString()}; visible ${geometry?.visible?.toShortString()}\n")
         append("Test status: ${nativeProbe.status}\n")
         append("System ink: ${systemProbe.status}\n")
+        append("System selection: $systemSelected; waiting to resume: $systemResumePending; manual retry required: $systemStartFailed\n")
+        append("Scratch handoff: ${paper.handoffDescription}\n")
         append("User observed ink while moving: $observed\n")
         append(stats()).append('\n')
         append("Native buffer details (last request):\n").append(nativeProbe.details()).append('\n')
@@ -216,12 +305,37 @@ class InkTestActivity : Activity() {
         append("\n\n").append(CrashReports(this@InkTestActivity).details())
     }.take(64 * 1024)
 
-    override fun onPause() { stopTest("Test paused. Select a test to start again."); super.onPause() }
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        resumeSystemTest(retryCleanup = true)
+    }
+    override fun onPause() {
+        resumed = false
+        if (systemSelected) pauseSystemTest("System ink paused; it will resume when this pane has focus.")
+        else stopTest("Test paused. Select a test to start again.")
+        super.onPause()
+    }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) stopTest("Focus changed. Select a test to start again.")
+        if (!::paper.isInitialized) return
+        if (hasFocus) resumeSystemTest(retryCleanup = true)
+        else if (systemSelected) pauseSystemTest("System ink paused; tap this pane to resume.")
+        else stopTest("Focus changed. Select a test to start again.")
+    }
+    @Deprecated("Activity back callback retained for this standalone Activity")
+    override fun onBackPressed() {
+        stopTest("Closing the ink test.")
+        super.onBackPressed()
+    }
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putBoolean("systemSelected", systemSelected)
+        state.putBoolean("systemStartFailed", systemStartFailed)
+        super.onSaveInstanceState(state)
     }
     override fun onDestroy() {
+        resumed = false
+        systemResumePending = false
         paper.viewTreeObserver.removeOnPreDrawListener(geometryObserver)
         nativeProbe.stop()
         systemProbe.stop()
