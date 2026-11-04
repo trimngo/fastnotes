@@ -99,7 +99,23 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Separate reference-sequence comparison (0.3.2-test4)
+## Current step: firmware API evidence (0.3.2-test5)
+
+Both test4 modes remain Gaps / lag and the user confirmed they look essentially
+the same. The reference's thread IDs match the intended execution, but it has not
+improved perceived writing. Keep the renderer unchanged while inspecting the
+exact full-size firmware implementation.
+
+Update through **Ink Test → Updates → Check now**. Open **API files → Save ZIP**,
+choose **Downloads** in Android's picker, and Save. Attach the resulting
+**fastnotes-api-evidence.zip** in the investigation conversation. The ZIP contains
+readable system API code/inventory and the ink report, without note files or
+scratch coordinates. An inventory-only result is explicitly identified and is
+still useful to share. There is no automatic upload or new storage/root permission.
+
+See [collection details](FIRMWARE_API_EVIDENCE.md).
+
+## Earlier reference-sequence comparison (0.3.2-test4)
 
 0.3.1 remains unsatisfactory on the physical device and in ForestNote. Test2's
 view request returned, but the user observed ink only after lifting the pen and

@@ -1,12 +1,11 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test4 is an investigation build**, not a claimed ink
-fix. The user reports no live ink in either test3 buffer layout, while built-in
-Viwoods Notes draws smoothly. Test4 compares **Worker refresh** and **Reference
-callback**, both with full-display buffers. The latter presents and ends strokes
-on the pen-callback thread and follows the inspected reference transaction order.
-Actual full-size performance remains unverified.
+keeps notes offline. **0.3.2-test5 collects firmware API evidence**. The user
+confirmed that test4's worker and callback modes look essentially the same, with
+gaps/lag, while built-in Viwoods Notes is smooth. This build adds **API files →
+Save ZIP** to inspect the exact full-size firmware implementation. It does not
+change handwriting behavior or claim a latency fix.
 See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 
 ## In this version
@@ -45,6 +44,11 @@ See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
   before Copy report. **Updates** is directly accessible from this screen.
   The additional **Fastnotes Ink Test** launcher icon opens that test directly,
   so the existing note renderer need not run first.
+- **Ink Test → API files → Save ZIP** saves readable system handwriting API
+  implementation files, a bounded source inventory and the ink report through
+  Android's document picker. Notes and personal files are excluded. Share the
+  resulting ZIP explicitly for analysis; there is no automatic upload.
+  See [the evidence export guide](docs/FIRMWARE_API_EVIDENCE.md).
 - Automatic checks for GitHub app updates, including development releases, with
   downloads and Android installation available inside the app.
 
@@ -92,7 +96,7 @@ or shared storage permission. Notes are never sent with update requests or logge
 Failure reports stay private on the device and include exception types/stack
 locations, not exception messages. Copying Device details is an explicit user action.
 Automatic backup and device
-transfer are excluded. This version does not implement note encryption or export:
+transfer are excluded. This version does not implement note encryption or note export:
 **uninstalling or clearing app data removes your notes**. Keep important work in
 your existing notes app until device testing is complete.
 

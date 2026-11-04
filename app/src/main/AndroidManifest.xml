@@ -27,6 +27,11 @@
             android:exported="false"
             android:process=":inktest"
             android:resizeableActivity="true" />
+        <activity
+            android:name=".diagnostics.FirmwareEvidenceActivity"
+            android:exported="false"
+            android:process=":inktest"
+            android:resizeableActivity="true" />
         <activity-alias
             android:name=".InkTestLauncher"
             android:targetActivity=".diagnostics.InkTestActivity"

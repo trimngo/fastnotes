@@ -263,7 +263,54 @@ third-party/vendor binary. Reports identify policy and callback/render/end threa
 IDs to verify actual execution on the ROM, while retaining the user's explicit
 visual result. Method success still does not establish visible low-latency ink.
 
+## Test4 result: execution verified, visual problem unresolved
+
+The new report records full-screen portrait, display 1920×2560 and visible canvas
+`[0,549][1920,2400]`. Runs with a recorded visual result include:
+
+| Policy/run | Accepted samples | Refresh calls | Longest call | Callback/render/end threads | Observed result |
+| --- | ---: | ---: | ---: | --- | --- |
+| Worker | 1,316 | 620 | 191,592 µs | 65 / 179 / 179 | Gaps / lag |
+| Worker | 1,515 | 766 | 98,010 µs | 65 / 8977 / 8977 | Gaps / lag |
+| Reference callback | 1,112 | 1,112 | 11,748 µs | 65 / 65 / 65 | Gaps / lag |
+
+Another reference run accepted/presented 4,206 samples and had maximum call
+duration 16,634 µs, but no visual result was selected for that run. Zero-sample
+and idle runs are not evidence of handwriting performance. All active comparisons
+reported FAST mode 4. The user then explicitly confirmed **"They looked
+essentially the same."** The displayed problem remains unresolved despite the
+verified reference execution sequence and lower per-run maximum call durations.
+The runs are not a matched-duration benchmark and do not measure pen-to-visible-
+ink latency. No callback policy is promoted into the notebook default.
+
+## Test5: inspect the exact firmware API implementation
+
+The next build adds **Ink Test → API files → Save ZIP**, rather than changing the
+renderer again without a firmware presentation contract. It collects readable
+system DEX with actual ENote/AutoDraw/service definitions, known native ENote/
+paintworker libraries, and readable known VDEX when framework DEX is stripped.
+An inventory identifies missing/unreadable/oversized sources; method-name presence
+and export availability remain separate claims.
+
+Collection is confined to canonical paths in fixed public system roots, with
+bounded input/output and no dynamic vendor-code loading. Notes, scratch paths,
+clipboard and browser data are not scanned. The current diagnostic report and
+source hashes accompany the code. Android's file picker supplies the explicit
+save destination. Nothing is uploaded automatically. The exact ROM's readable
+code availability is not known until the user exports.
+
+The [collection guide](FIRMWARE_API_EVIDENCE.md) describes contents, limits and
+the UI. Prepared work survives rotation and finalized cache can recover after
+process death while picking a destination, subject to matching firmware/API/app
+metadata. User-provided archives are to be inspected in the research workspace;
+they are not to be published in the source repository or bundled into the app.
+
 ## Device experiment and decision
+
+The current next step is **API files → Save ZIP**, saving in Downloads and
+attaching `fastnotes-api-evidence.zip` to the investigation conversation. The
+comparison below is retained as the test4 procedure; another pen trial is not
+required to collect the API evidence.
 
 1. Built-in Notes is confirmed smooth for the rapid pattern. Compare its desired
    landscape split-screen layout as needed when validating a working candidate.

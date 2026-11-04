@@ -9,6 +9,7 @@ import dev.fastnotes.storage.LoadedNote
 import dev.fastnotes.storage.NoteStore
 import dev.fastnotes.updates.UpdateController
 import dev.fastnotes.diagnostics.CrashReports
+import dev.fastnotes.diagnostics.FirmwareEvidenceController
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -17,6 +18,7 @@ class FastnotesApp : Application() {
     val store by lazy { NoteStore(File(filesDir, "sheets")) }
     val updates by lazy { UpdateController(this) }
     val crashes by lazy { CrashReports(this) }
+    val firmwareEvidence by lazy { FirmwareEvidenceController(this) }
     val io = Executors.newSingleThreadExecutor { task -> Thread(task, "sheet-storage") }
     private val main = Handler(Looper.getMainLooper())
     var editor: NoteEditor? = null

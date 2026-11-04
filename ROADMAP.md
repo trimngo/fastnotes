@@ -124,6 +124,15 @@ DOWN. Test4 adds an isolated comparison following that reference sequence and
 records execution thread IDs. The notebook default remains unchanged; physical
 thread-affinity/transaction requirements have not been established.
 
+Test4 ran its reference render/end calls on callback thread 65 as intended.
+The user selected **Gaps / lag** and confirmed the two modes look **essentially
+the same**. Lower per-run maximum call duration does not establish better visible
+latency. Test5 keeps the renderer and adds a bounded, opt-in firmware API file
+export so the exact 3.15.15 method implementation can be inspected. It saves only
+readable system API code and diagnostics through Android's document picker; no
+notes or personal files are scanned and no archive is uploaded automatically.
+See [the evidence collection guide](docs/FIRMWARE_API_EVIDENCE.md).
+
 ## Later ideas
 
 These are recorded for future work, not requirements to implement immediately.

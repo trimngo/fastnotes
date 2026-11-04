@@ -70,7 +70,11 @@ class InkTestActivity : Activity() {
         row("Back" to { finish() }, "Updates" to {
             stopTest("Opening app updates…")
             startActivity(Intent(this, UpdateActivity::class.java))
-        }, "Clear" to { stopTest("Cleared. Choose a test to repeat."); resetObservation() }, "Copy report" to {
+        }, "API files" to {
+            val currentReport = report()
+            stopTest("Opening firmware API export…")
+            startActivity(Intent(this, FirmwareEvidenceActivity::class.java).putExtra(FirmwareEvidenceActivity.EXTRA_REPORT, currentReport))
+        }, "Copy report" to {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Fastnotes ink test", report()))
             Toast.makeText(this, "Ink test report copied", Toast.LENGTH_SHORT).show()
         })

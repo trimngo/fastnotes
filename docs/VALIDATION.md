@@ -1,3 +1,56 @@
+# 0.3.2-test5 firmware API evidence validation
+
+Software checks performed on 4 November 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **93 tests passed**, no failures, errors or skips. Lint has no
+errors (40 warnings and one hint); debug/release variants compile. Eight export
+cases verify:
+
+- Actual DEX class definitions select implementation units; mere references,
+  malformed tables and unrelated units do not. Known service/AutoDraw definitions
+  are recognized alongside ENote classes.
+- Canonical system-root filtering rejects personal-file candidates and symlinks
+  resolving outside those roots. Exported code has SHA-256 metadata.
+- Code-entry/export limits yield a usable inventory/report ZIP when code cannot
+  be included. Stripped framework archives can use readable known VDEX evidence.
+- The destination is opened only after the user's document-picker result.
+  Rotation cannot launch duplicate pickers, and finalized cache recovery after
+  process death requires matching firmware/API/app versions.
+- The private export activity stays in the ink-test process; it does not open
+  saved sheets or initialize the editor. Stale-firmware cache is rejected before
+  opening the chosen destination.
+
+Independent code review found no release blocker. One non-blocking hardening
+limit remains: scan accounting trusts declared ZIP entry sizes before reading;
+malformed system archives can cause an attempted read beyond the remaining scan
+budget, while each read and all exported code retain their own size limits.
+
+The user confirmed test4 Worker refresh and Reference callback looked essentially
+identical, both with gaps/lag. The notebook renderer and native policies are
+unchanged. This update collects evidence for the next investigation; it does not
+claim a handwriting-latency or split-screen fix. Exact-ROM file readability and
+the physical document-picker flow remain unverified without the tablet.
+
+## Evidence APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test5` (code 9)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- Ink Test → API files → Save ZIP uses Android's document picker
+- No new permissions; no automatic upload; no notes or scratch coordinates
+- APK bytes: `8057332`
+- APK SHA-256: `88ad35dd7f3e10f146dafbd1328d516b26faef4f4caf3d3b03510683fe26c8da`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [export contents and procedure](FIRMWARE_API_EVIDENCE.md) and
+[negative hardware comparisons](INK_INVESTIGATION.md).
+
+---
+
 # 0.3.2-test4 reference callback sequence validation
 
 Software checks performed on 30 October 2026:

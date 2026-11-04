@@ -1,7 +1,8 @@
 # Draft technical request for Viwoods
 
 Prepared from the user's device evidence; **not sent**. Built-in Notes is smooth;
-test3's two buffer layouts both produced no live ink. Test4 is pending.
+test3's two buffer layouts both produced no live ink. Test4's modes both remain
+Gaps / lag and the user says they look essentially the same.
 
 We are developing Fastnotes (`dev.fastnotes`), an offline Android handwriting
 notepad for full-size Viwoods AiPaper. Device: Android 13/API 33, build/firmware
@@ -22,10 +23,14 @@ An isolated comparison also produced **No live ink** in both layouts:
 | Pane 1920×1851 at (0,549) | 5,179 | 4,220 | 2,105 | FAST 4 | 129,467 µs |
 | Display 1920×2560 at (0,0) | 3,008 | 2,149 | 1,081 | FAST 4 | 105,470 µs |
 
-Those calls ran on a presentation worker. We are separately testing the inspected
-community reference's sequence: render/end on the pen-callback thread, writing
-enabled at startup without re-enabling on each DOWN. Its full-size result is
-pending. The timings above are call durations, not visible panel latency.
+Those calls ran on a presentation worker. We then tested the inspected community
+reference's sequence: render/end on the pen-callback thread, writing enabled at
+startup without re-enabling on each DOWN. The report confirms callback/render/end
+all on thread 65, with 1,112 accepted/presented samples and maximum call 11,748 µs;
+the user still selected Gaps / lag. They explicitly said the worker and reference
+look essentially the same. The timings above are call durations, not visible
+panel latency. We are collecting readable exact-device API implementation files
+to inspect the missing presentation contract; none are bundled in the app.
 
 On this firmware the app can reflect `ENoteSetting.setViewAutoDrawEnabled(View,
 boolean)` and `getInstance(Context)`. Both returned without exceptions in an
