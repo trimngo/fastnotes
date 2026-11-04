@@ -1,3 +1,57 @@
+# 0.3.2-test6 system ink service validation
+
+Software checks performed on 4 November 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **102 tests passed**, no failures, errors or skips. Lint has no
+errors (43 warnings and one hint); debug/release variants compile. Nine new cases
+verify the inspected system-service protocol and its lifecycle:
+
+- Exact token, typed Rect, transaction codes and synchronous flags; immutable
+  copies preserve registration/removal equality after caller mutation.
+- Unknown model/build/API, empty/invalid area, missing service and wrong interface
+  descriptor fail before registration. Unhandled transactions cannot succeed.
+- A failed add reply rolls back a possible server effect. Failed removal retains
+  the same binder/rectangle and prevents another registration until retry works.
+  Exception messages do not enter reports.
+- Activity tests register the visible right-hand pane, preserve geometry during
+  status changes, record the observation, and remove on focus loss, resize and
+  Updates without opening notes or starting an app-native bitmap listener.
+- Unconfirmed cleanup blocks Android/worker/reference/system tests and Updates/
+  API export. Retained Application ownership survives Activity recreation in the
+  same PID and prevents duplicate registration until removal succeeds.
+
+Independent review checked the Binder schema against the user's exact firmware
+and reviewed ownership retention without Activity references. The view API from
+test2 is confirmed empty; System ink uses the implemented per-PID server route.
+Vendor code remains outside this repository and APK. Removal replies acknowledge
+service acceptance; native cleanup runs asynchronously. Platform access, visible
+ink quality, clipping, native cleanup timing and landscape/split-screen behavior
+remain unverified on the physical tablet. No automatic crash-cleanup claim is made.
+
+The notebook and two earlier bitmap policies remain unchanged. Original-pen eraser
+integration and durable notebook handoff for this route are not part of the probe.
+No new permissions, native binaries, app-side ENoteWriting initialization, global
+AutoDraw/tool/width/exclusion/refresh-mode settings or platform policy changes.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test6` (code 10)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- System protocol accepts only Viwoods AiPaper / API 33 / build 3.15.15
+- APK bytes: `7991768`
+- APK SHA-256: `2aedb518b1f89d3740107bd11bb7c385c203dcedd373344ae13817484c2ff82b`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [exact-device findings](EXACT_FIRMWARE_FINDINGS.md) and
+[the physical test procedure](DEVICE_TESTING.md).
+
+---
+
 # 0.3.2-test5 firmware API evidence validation
 
 Software checks performed on 4 November 2026:

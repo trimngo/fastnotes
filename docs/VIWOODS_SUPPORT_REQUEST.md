@@ -61,3 +61,16 @@ https://github.com/trimngo/fastnotes. Test4 compares callback and worker executi
 with full-display buffers and visible-pane clipping. It records thread IDs and
 the user's actual visual result separately from call/counter success. No saved
 notes or handwriting content need be shared to reproduce the issue.
+
+
+## Exact-device evidence added 4 November 2026
+
+The user exported framework/services implementation from full-size 3.15.15.
+Static inspection confirms setViewAutoDrawEnabled is empty, both public
+unwrite-rectangle wrappers remove a region, while the actual service add-region
+protocol is implemented. An opt-in, build-pinned per-PID region test is prepared
+without app-side ENoteWriting initialization or global setting changes. Physical
+service access and visible ink remain unverified. Please confirm the supported
+third-party scoped API and cleanup/rotation/split-screen contract. Vendor code
+and the user's ZIP are not included in this public draft. This request remains
+**unsent**.

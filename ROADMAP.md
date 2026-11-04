@@ -159,3 +159,19 @@ encrypted until encryption has actually been implemented and verified.
 
 The order among the later ideas is undecided. The first priority remains
 **low-latency handwriting on lined paper alongside the German app**.
+
+
+### Exact-device implementation and system ink probe (0.3.2-test6)
+
+- The user's test5 ZIP supplied matching full-size 3.15.15 framework/service DEX.
+  Checksums were verified and files remain outside the public repository.
+- Confirmed the prior view API is an empty implementation; successful calls
+  could never establish preview. Both native bitmap policies remain negative.
+- Implement a separate, opt-in System ink scratchpad using the actual system
+  service's per-PID region protocol, strictly pinned to the inspected device/API/
+  build and checked Binder descriptor. No app native bitmap pipeline or global
+  setting changes are involved.
+- Validate exact Parcel schema, partial-failure rollback, cleanup retry blocking,
+  focus/resize/Updates cleanup and unchanged note isolation in software.
+- Pending: device confirmation of connection and live drawing, then landscape/
+  Chrome split-screen. Do not promote to the notebook before these observations.

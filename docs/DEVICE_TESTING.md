@@ -99,7 +99,39 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: firmware API evidence (0.3.2-test5)
+## Current step: system-owned ink (0.3.2-test6)
+
+The uploaded firmware ZIP supplied real framework and service implementations.
+The view API tested in test2 is a no-op. Test6 uses the actual system-service
+region protocol on the inspected full-size AiPaper/API 33/build 3.15.15 only.
+See [the exact findings and protocol limits](EXACT_FIRMWARE_FINDINGS.md).
+
+1. Update through **Fastnotes Ink Test → Updates → Check now**.
+2. Start full-screen in portrait. Select **System ink** and draw the rapid
+   continuous up/down pattern. Observe ink **while the pen moves**. App-drawn
+   fallback waits one second after pen-up; the firmware can clear its temporary
+   overlay after 800 ms, so a brief gap after pen-up is not the live-ink test.
+3. Select **Smooth**, **Gaps / lag** or **No live ink**, then **Copy report**.
+   Include a failed connection/registration report if no test starts. A returned
+   service call is reported as an accepted request, never measured smoothness.
+4. If full-screen works, repeat in landscape, then landscape split-screen with
+   Chrome on the left. Tap Fastnotes and select **System ink** after each focus,
+   rotation or divider change; this test deliberately does not restart itself.
+   Check that ink stays inside the scratch area and does not appear over Chrome
+   or controls. Stop if it draws outside the requested area and report that.
+5. Open Updates or return from the scratchpad and check that system ink stops.
+   No saved sheets are opened or changed. Original-pen eraser integration and
+   notebook promotion remain separate from this first live-ink probe.
+
+Cleanup requests removal of the same rectangle on focus loss, pause, resize and
+exit. Native cleanup runs asynchronously after the service accepts removal. Failed
+cleanup ownership survives Activity recreation in the same process and remains visible and blocks another test, Android ink, Updates and export
+until removal succeeds. The ROM contains an app-death cleanup hook, but its
+upstream invocation is not established by the captured classes; crash cleanup is
+not guaranteed by these software checks. No global drawing, pen-width, tool,
+refresh-mode or exclusion settings are changed.
+
+## Earlier step: firmware API evidence (0.3.2-test5)
 
 Both test4 modes remain Gaps / lag and the user confirmed they look essentially
 the same. The reference's thread IDs match the intended execution, but it has not

@@ -10,6 +10,8 @@ import dev.fastnotes.storage.NoteStore
 import dev.fastnotes.updates.UpdateController
 import dev.fastnotes.diagnostics.CrashReports
 import dev.fastnotes.diagnostics.FirmwareEvidenceController
+import dev.fastnotes.diagnostics.InkProbeLog
+import dev.fastnotes.diagnostics.SystemInkProbe
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -19,6 +21,9 @@ class FastnotesApp : Application() {
     val updates by lazy { UpdateController(this) }
     val crashes by lazy { CrashReports(this) }
     val firmwareEvidence by lazy { FirmwareEvidenceController(this) }
+    val inkProbeLog by lazy { InkProbeLog(this) }
+    // Region ownership uses the process PID: retain failed cleanup across Activity recreation.
+    val systemInk by lazy { SystemInkProbe(inkProbeLog::event) }
     val io = Executors.newSingleThreadExecutor { task -> Thread(task, "sheet-storage") }
     private val main = Handler(Looper.getMainLooper())
     var editor: NoteEditor? = null

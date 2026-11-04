@@ -21,12 +21,14 @@ import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import dev.fastnotes.BuildConfig
+import dev.fastnotes.FastnotesApp
 import dev.fastnotes.ink.panelOrientation
 import dev.fastnotes.updates.UpdateActivity
 
 /** Runs in :inktest. Scratch images and native edits never enter NoteStore. */
 class InkTestActivity : Activity() {
     private lateinit var nativeProbe: NativeBufferProbe
+    private lateinit var systemProbe: SystemInkProbe
     private lateinit var log: InkProbeLog
     private lateinit var paper: InkTestView
     private lateinit var status: TextView
@@ -46,8 +48,11 @@ class InkTestActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         oldRun = InkProbeLog.read(this)
-        log = InkProbeLog(this)
+        val app = application as FastnotesApp
+        log = app.inkProbeLog
+        systemProbe = app.systemInk
         log.event("Ink test ${BuildConfig.VERSION_NAME}; model ${Build.MODEL}; build ${Build.DISPLAY}; API ${Build.VERSION.SDK_INT}; PID ${Process.myPid()}")
+        if (systemProbe.hasRegistration) systemProbe.stop()
         apiReport = FirmwarePreviewProbe.capabilities()
         nativeProbe = NativeBufferProbe(this, log::event).also { probe ->
             probe.onStrokeFinished = { paper.nativeStrokeFinished() }
@@ -68,22 +73,23 @@ class InkTestActivity : Activity() {
             root.addView(controls)
         }
         row("Back" to { finish() }, "Updates" to {
-            stopTest("Opening app updates…")
-            startActivity(Intent(this, UpdateActivity::class.java))
+            if (stopTest("Opening app updates…")) startActivity(Intent(this, UpdateActivity::class.java))
         }, "API files" to {
             val currentReport = report()
-            stopTest("Opening firmware API export…")
-            startActivity(Intent(this, FirmwareEvidenceActivity::class.java).putExtra(FirmwareEvidenceActivity.EXTRA_REPORT, currentReport))
+            if (stopTest("Opening firmware API export…")) {
+                startActivity(Intent(this, FirmwareEvidenceActivity::class.java).putExtra(FirmwareEvidenceActivity.EXTRA_REPORT, currentReport))
+            }
         }, "Copy report" to {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Fastnotes ink test", report()))
             Toast.makeText(this, "Ink test report copied", Toast.LENGTH_SHORT).show()
         })
         row("Android pen" to {
-            stopTest("Android pen: write with the pen tip."); modeLabel = "Android pen"; resetObservation()
-        }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) }, "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
+            if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
+        }, "System ink" to { startSystemTest() }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) },
+            "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. Compare Worker refresh and Reference callback with the same fast pen strokes. Both use full-display buffers. App ink waits one second after pen-up. Record what you saw while writing, then Copy report."
+            text = "Temporary scratchpad. Try System ink with fast pen strokes. It requests the firmware’s own ink inside this area. App ink waits one second after pen-up. Record what you saw while writing, then Copy report. Other modes retain the earlier comparisons."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -112,11 +118,16 @@ class InkTestActivity : Activity() {
         }
         root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80)))
         setContentView(root)
+        if (systemProbe.hasRegistration) {
+            paper.mode(true)
+            modeLabel = "Cleanup pending"
+            status.text = systemProbe.status
+        }
         paper.viewTreeObserver.addOnPreDrawListener(geometryObserver)
     }
 
     private fun startNativeTest(mode: NativeBufferMode) {
-        stopTest("Preparing ${mode.label}…")
+        if (!stopTest("Preparing ${mode.label}…")) return
         modeLabel = mode.label
         resetObservation()
         val geometry = geometry()
@@ -131,22 +142,41 @@ class InkTestActivity : Activity() {
         } else status.text = nativeProbe.status
     }
 
+    private fun startSystemTest() {
+        if (!stopTest("Preparing System ink…")) return
+        modeLabel = "System ink"
+        resetObservation()
+        val geometry = geometry()
+        if (geometry == null || !hasWindowFocus()) {
+            status.text = "Tap this pane, then select the test again."
+            return
+        }
+        if (systemProbe.start(geometry.visible)) {
+            registeredGeometry = geometry
+            paper.mode(true)
+            status.text = "System ink requested. Look for complete ink while moving, then record the result."
+        } else status.text = systemProbe.status
+    }
+
     private fun resetObservation() { observations.clearCheck(); observed = "Not recorded" }
 
-    private fun stopTest(message: String) {
-        if (!::nativeProbe.isInitialized) return
-        if (::paper.isInitialized && (paper.samples > 0 || nativeProbe.active || nativeProbe.samples > 0)) {
+    private fun stopTest(message: String): Boolean {
+        if (!::nativeProbe.isInitialized) return true
+        if (::paper.isInitialized && (paper.samples > 0 || nativeProbe.active || nativeProbe.samples > 0 || systemProbe.hasRegistration)) {
             val summary = stats() + "; user observed: $observed" +
-                if (nativeProbe.active || nativeProbe.samples > 0) "\n" + nativeProbe.details() else ""
+                if (systemProbe.hasRegistration || modeLabel == "System ink") "\n" + systemProbe.status
+                else if (nativeProbe.active || nativeProbe.samples > 0) "\n" + nativeProbe.details() else ""
             if (runs.lastOrNull() != summary) runs.addLast(summary)
             while (runs.size > 8) runs.removeFirst()
             log.event(summary)
         }
         nativeProbe.stop()
+        val released = systemProbe.stop()
         registeredGeometry = null
-        if (::paper.isInitialized) paper.mode(false)
+        if (::paper.isInitialized) paper.mode(!released)
         modeLabel = "Idle (select a test)"
-        if (::status.isInitialized) status.text = message
+        if (::status.isInitialized) status.text = if (released) message else systemProbe.status
+        return released
     }
 
     @Suppress("DEPRECATION") // Full display coordinates are required; pane metrics would defeat this experiment.
@@ -175,6 +205,7 @@ class InkTestActivity : Activity() {
         append("Display: ${geometry?.display?.toShortString()}; rotation ${geometry?.rotation}\n")
         append("Canvas: ${geometry?.canvas?.toShortString()}; visible ${geometry?.visible?.toShortString()}\n")
         append("Test status: ${nativeProbe.status}\n")
+        append("System ink: ${systemProbe.status}\n")
         append("User observed ink while moving: $observed\n")
         append(stats()).append('\n')
         append("Native buffer details (last request):\n").append(nativeProbe.details()).append('\n')
@@ -193,6 +224,7 @@ class InkTestActivity : Activity() {
     override fun onDestroy() {
         paper.viewTreeObserver.removeOnPreDrawListener(geometryObserver)
         nativeProbe.stop()
+        systemProbe.stop()
         super.onDestroy()
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()

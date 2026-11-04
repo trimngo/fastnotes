@@ -332,3 +332,55 @@ confirmed evidence and unresolved API contracts. It has not been sent.
 No existing external application's code, vendor APK, proprietary binary or SDK
 was copied into Fastnotes. Only interface facts were used for this independently
 written experiment. No tablet, logcat or native crash stack is available here.
+
+
+## Exact-device export and 0.3.2-test6 system ink
+
+4 November 2026. The uploaded test5 ZIP contains actual ENote framework and
+system-service implementations from the reported full-size firmware 3.15.15.
+Both DEX checksums match the export manifest. Files and disassembly are kept in
+the private research workspace; vendor implementation is not bundled or committed.
+[Exact findings](EXACT_FIRMWARE_FINDINGS.md) records provenance and API facts.
+
+The previous `setViewAutoDrawEnabled(View, boolean)` experiment is now explained:
+the exact method is **empty**. The related per-view exclusion methods are also
+empty, and both public add/remove-unwrite wrappers call the remove-region service
+method. The earlier successful return did not enable any region. This evidence
+supersedes assumptions based on method names or the provisional community notes.
+
+The server's actual `addAutoDrawRect` is implemented. It stores a copy under the
+calling PID, builds the effective region, enables its own native callback path,
+and pushes nonempty rectangles into native AutoDraw. Its T1000 input path sends
+six integers (action, x, y, pressure, zero, zero) to native auto-draw; it does not
+render an app Java bitmap per sample. The server eagerly initializes this policy.
+Its Java enable Boolean has no observed reader, so test6 does not toggle it. The
+initial Java tool value -1 does not establish disabled native pen rendering.
+
+Test6 introduces **System ink** in the isolated scratchpad. It connects to the
+published ENoteSetting Binder service, checks the interface descriptor, and uses
+only the exact add/remove Rect protocol recovered from this firmware. It refuses
+other model/build/API combinations before connecting. This explicitly replaces
+the earlier no-hardcoded-transaction diagnostic restriction with an inspected,
+version-pinned protocol; no codes are guessed and no hidden API policy is changed.
+A lookup/access/registration failure is recorded rather than bypassed.
+
+The registered rectangle is exactly the scratchpad's current visible screen
+bounds. No app ENoteWriting instance, bitmap, input listener, global exclusions,
+pen widths/tools, refresh modes or firmware settings are initialized/changed.
+App ink remains held back until one second after pen-up. The server itself clears
+temporary overlay after 800 ms on UP; physical behavior while moving is the
+comparison of interest. Registration success still does not prove visible ink.
+
+Cleanup requests removal of the same immutable rectangle on focus loss, resize,
+pause and exit. The native region update is asynchronous: a reply establishes
+accepted removal, not confirmed panel clearing. A failure retains the registration
+at Application/process scope across Activity recreation for retry and blocks switching to any
+other ink test or opening Updates/API export. A server app-death hook exists,
+but its external invocation is not proven by this captured code. Ordinary cleanup
+is tested explicitly instead of assuming crash recovery. Saved notes remain
+unopened. Worker/reference bitmap routes and notebook defaults are unchanged.
+
+Next device evidence: System ink connection/status, what appears while rapidly
+writing in portrait, and, only if successful, both landscape rotations and Chrome
+split-screen. Original-pen erasing and durable notebook handoff need separate
+integration after a verified live route; this scratch test does not claim either.

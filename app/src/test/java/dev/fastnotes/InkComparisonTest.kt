@@ -5,7 +5,10 @@ import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
+import android.os.Binder
 import android.os.Looper
+import android.os.Parcel
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -17,6 +20,8 @@ import dev.fastnotes.diagnostics.NativeBufferProbe
 import dev.fastnotes.diagnostics.InkProbeLog
 import dev.fastnotes.diagnostics.InkTestActivity
 import dev.fastnotes.diagnostics.InkTestView
+import dev.fastnotes.diagnostics.SystemInkDevice
+import dev.fastnotes.diagnostics.SystemInkProbe
 import dev.fastnotes.ink.ViwoodsPanel
 import dev.fastnotes.ink.NativeRefreshPolicy
 import dev.fastnotes.model.Note
@@ -30,6 +35,24 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.Duration
+
+private class ActivitySystemInkBinder : Binder() {
+    var region: Rect? = null
+    var failRemove = false
+    var adds = 0
+    init { attachInterface(null, SystemInkProbe.DESCRIPTOR) }
+    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+        data.enforceInterface(SystemInkProbe.DESCRIPTOR)
+        val rect = data.readTypedObject(Rect.CREATOR)!!
+        when (code) {
+            0x18 -> { assertNull(region); region = Rect(rect); adds++ }
+            0x19 -> { check(!failRemove); assertEquals(region, rect); region = null }
+            else -> error("Unexpected transaction")
+        }
+        reply!!.writeNoException()
+        return true
+    }
+}
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -96,6 +119,127 @@ class InkComparisonTest {
         assertTrue(report.contains("Stage 99"))
         assertFalse(report.contains("Stage 0 "))
         assertTrue(report.length < 25_000)
+    }
+
+    @Test @Config(qualifiers = "w1200dp-h800dp-land-mdpi")
+    fun systemInkUsesVisiblePaneWithoutAppNativeAndReleasesOnFocusResizeAndUpdates() {
+        val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
+        val activity = lifecycle.get()
+        val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        fun descendants(view: View): Sequence<View> = sequence {
+            yield(view)
+            if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+        val paper = descendants(root).filterIsInstance<InkTestView>().single()
+        fun button(label: String) = descendants(root).filterIsInstance<Button>().single { it.text == label }
+        fun layout(width: Int) {
+            root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+            root.layout(600, 0, 600 + width, 800)
+            paper.viewTreeObserver.dispatchOnPreDraw()
+        }
+        val service = ActivitySystemInkBinder()
+        val probe = SystemInkProbe({}, { SystemInkDevice("Viwoods AiPaper", "3.15.15", 33) }, { service })
+        InkTestActivity::class.java.getDeclaredField("systemProbe").apply { isAccessible = true }.set(activity, probe)
+        val fake = FakePanel.getInstance().apply { reset() }
+        try {
+            layout(600)
+            button("System ink").performClick()
+            val origin = IntArray(2).also { paper.getLocationOnScreen(it) }
+            assertEquals(Rect(origin[0], origin[1], origin[0] + paper.width, origin[1] + paper.height), service.region)
+            assertTrue(paper.firmwareTest)
+            assertNull(fake.input); assertNull(fake.foreground)
+            descendants(root).filterIsInstance<RadioButton>().single { it.text == "Smooth" }.performClick()
+            button("Copy report").performClick()
+            val report = activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
+            assertTrue(report.contains("System ink: System writing area accepted"))
+            assertTrue(report.contains("User observed ink while moving: Smooth"))
+            layout(600)
+            assertTrue(probe.hasRegistration)
+            lifecycle.windowFocusChanged(false)
+            assertNull(service.region)
+            lifecycle.windowFocusChanged(true)
+            assertFalse(probe.hasRegistration)
+            button("System ink").performClick()
+            layout(360)
+            assertNull(service.region)
+            button("System ink").performClick()
+            button("Updates").performClick()
+            assertNull(service.region)
+            assertEquals("dev.fastnotes.updates.UpdateActivity", shadowOf(activity).nextStartedActivity.component!!.className)
+            assertNull(app.editor)
+        } finally { lifecycle.pause().stop().destroy() }
+    }
+
+    @Test @Config(qualifiers = "w1200dp-h800dp-land-mdpi")
+    fun unconfirmedSystemCleanupBlocksSwitchingToOtherInkOrOpeningUpdates() {
+        val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
+        val activity = lifecycle.get()
+        val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        fun descendants(view: View): Sequence<View> = sequence {
+            yield(view)
+            if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+        fun button(label: String) = descendants(root).filterIsInstance<Button>().single { it.text == label }
+        val paper = descendants(root).filterIsInstance<InkTestView>().single()
+        root.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+        root.layout(600, 0, 1200, 800)
+        val service = ActivitySystemInkBinder()
+        val probe = SystemInkProbe({}, { SystemInkDevice("Viwoods AiPaper", "3.15.15", 33) }, { service })
+        InkTestActivity::class.java.getDeclaredField("systemProbe").apply { isAccessible = true }.set(activity, probe)
+        try {
+            button("System ink").performClick()
+            assertTrue(probe.hasRegistration)
+            service.failRemove = true
+            for (label in listOf("Android pen", "Worker refresh", "Reference callback", "Updates", "API files", "System ink")) {
+                button(label).performClick()
+                assertTrue(probe.hasRegistration)
+                assertTrue(paper.firmwareTest)
+                assertEquals(1, service.adds)
+                assertNull(shadowOf(activity).nextStartedActivity)
+            }
+            service.failRemove = false
+            button("Android pen").performClick()
+            assertNull(service.region)
+            assertFalse(paper.firmwareTest)
+        } finally { service.failRemove = false; lifecycle.pause().stop().destroy() }
+    }
+
+    @Test @Config(qualifiers = "w1200dp-h800dp-land-mdpi")
+    fun pendingSystemRegionSurvivesActivityRecreationInTheSameProcess() {
+        val service = ActivitySystemInkBinder()
+        val probe = SystemInkProbe({}, { SystemInkDevice("Viwoods AiPaper", "3.15.15", 33) }, { service })
+        FastnotesApp::class.java.getDeclaredField("systemInk\$delegate").apply { isAccessible = true }.set(app, lazyOf(probe))
+        val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
+        fun descendants(view: View): Sequence<View> = sequence {
+            yield(view)
+            if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+        fun button(label: String) = descendants(lifecycle.get().findViewById(android.R.id.content))
+            .filterIsInstance<Button>().single { it.text == label }
+        fun layout() {
+            val root = lifecycle.get().findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            root.measure(View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+            root.layout(600, 0, 1200, 800)
+        }
+        try {
+            layout()
+            button("System ink").performClick()
+            val original = Rect(service.region!!)
+            service.failRemove = true
+            lifecycle.recreate().visible().windowFocusChanged(true)
+            layout()
+            assertSame(probe, app.systemInk)
+            assertEquals(original, service.region)
+            assertTrue(probe.hasRegistration)
+            assertTrue(descendants(lifecycle.get().findViewById(android.R.id.content)).filterIsInstance<InkTestView>().single().firmwareTest)
+            button("System ink").performClick()
+            assertEquals(1, service.adds)
+            service.failRemove = false
+            button("System ink").performClick()
+            assertEquals(2, service.adds)
+            assertTrue(probe.hasRegistration)
+        } finally { service.failRemove = false; lifecycle.pause().stop().destroy() }
     }
 
     @Test @Config(qualifiers = "w1200dp-h800dp-land-mdpi")

@@ -1,12 +1,14 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test5 collects firmware API evidence**. The user
-confirmed that test4's worker and callback modes look essentially the same, with
-gaps/lag, while built-in Viwoods Notes is smooth. This build adds **API files →
-Save ZIP** to inspect the exact full-size firmware implementation. It does not
-change handwriting behavior or claim a latency fix.
-See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
+keeps notes offline. **0.3.2-test6 tests the system-owned ink path** found in the
+user's exact firmware export. The earlier worker and callback modes both remain
+laggy. Firmware 3.15.15 implements the previously tested view API as an empty
+method, while its system service has a separate scoped AutoDraw route. **Ink Test
+→ System ink** requests that route for the visible scratchpad. Notebook rendering
+is unchanged; physical performance of this new route is unverified.
+See [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
+[the investigation](docs/INK_INVESTIGATION.md).
 
 ## In this version
 
@@ -38,8 +40,10 @@ See [the investigation and test procedure](docs/INK_INVESTIGATION.md).
 - Device details includes native startup/visibility/timing diagnostics and private
   crash/Android process-exit evidence without note contents or exception messages.
 - **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
-  process. It compares Android pen, Worker refresh and Reference callback, with native
-  refresh requests clipped to the visible scratchpad. App-drawn native snapshots
+  process. It offers Android pen, System ink, Worker refresh and Reference callback.
+  System ink uses an exact firmware-pinned service protocol to register only the
+  visible scratchpad, without app-side native bitmap/input initialization. The
+  two older bitmap modes retain clipped refresh requests. App-drawn native snapshots
   wait one second after pen-up. Choose **Smooth**, **Gaps / lag** or **No live ink**
   before Copy report. **Updates** is directly accessible from this screen.
   The additional **Fastnotes Ink Test** launcher icon opens that test directly,
