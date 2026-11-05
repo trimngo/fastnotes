@@ -2,7 +2,9 @@ package dev.fastnotes.ink
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BlendMode
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -45,6 +47,9 @@ class ViwoodsPanel internal constructor(
     private var canvas: Canvas? = null
     private var displayFrame: Bitmap? = null
     private var displayCanvas: Canvas? = null
+    private var backgroundFrame: Bitmap? = null
+    private var backgroundCanvas: Canvas? = null
+    private val backgroundCopy = Paint().apply { blendMode = BlendMode.SRC }
     private val raster = PaperRasterizer()
     private var page = Note()
     private var view = Viewport(1000f, 1, 1, 0f)
@@ -133,6 +138,10 @@ class ViwoodsPanel internal constructor(
                 canvas = Canvas(frame!!)
                 displayFrame = source.copy(Bitmap.Config.ARGB_8888, true)
                 displayCanvas = Canvas(displayFrame!!)
+                // ENote deduplicates registrations by bitmap identity as well as layer kind.
+                // Sharing this object with the foreground replaces that layer in SoftSolution.
+                backgroundFrame = source.copy(Bitmap.Config.ARGB_8888, true)
+                backgroundCanvas = Canvas(backgroundFrame!!)
                 page = note
                 view = Viewport(note.pageWidth, source.width, source.height, note.scrollY)
                 screenBounds = Rect(x, y, x + source.width, y + source.height)
@@ -155,7 +164,7 @@ class ViwoodsPanel internal constructor(
             optional("setApplicationContext", context.applicationContext)
             previousMode = optional("getPictureMode") as? Int
             call("setWritingJavaBitmap", displayFrame, orientation, x, y)
-            call("setWritingJavaBackgroundBitmap", displayFrame, orientation, x, y)
+            call("setWritingJavaBackgroundBitmap", backgroundFrame, orientation, x, y)
             optional("setWritingInputJumpPointCount", 1)
             optional("setRenderWritingDelayCount", 0)
             val listenerType = methods.first { it.name == "setWritingInputlistener" &&
@@ -398,6 +407,7 @@ class ViwoodsPanel internal constructor(
         points.clear(); pieces.clear(); erased.clear()
         waitingForHandoff = refreshPolicy == NativeRefreshPolicy.WORKER
         if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK) {
+            updateCompletedBackground()
             lastEndThread = Thread.currentThread().id
             call("onWritingEnd")
         }
@@ -421,7 +431,7 @@ class ViwoodsPanel internal constructor(
             waitingForHandoff = false
             handoffRequested = false
             try {
-                call("setWritingJavaBackgroundBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
+                updateCompletedBackground()
                 lastEndThread = Thread.currentThread().id
                 call("onWritingEnd")
             } catch (_: Throwable) {
@@ -430,6 +440,14 @@ class ViwoodsPanel internal constructor(
                 onFailure?.invoke()
             }
         }
+    }
+
+    /** Called under lock, only once the completed frame is ready, never from MOVE. */
+    private fun updateCompletedBackground() = synchronized(firmwareLock) {
+        // Native rendering retains this bitmap. Serialize its update with every JNI read,
+        // and keep it unchanged while the next stroke is being drawn into frame.
+        backgroundCanvas!!.drawBitmap(frame!!, 0f, 0f, backgroundCopy)
+        call("setWritingJavaBackgroundBitmap", backgroundFrame, orientation, screenBounds.left, screenBounds.top)
     }
 
     fun finish(cancel: Boolean) = synchronized(lock) { if (penDown) finishLocked(cancel) }
@@ -468,6 +486,7 @@ class ViwoodsPanel internal constructor(
         }
         synchronized(lock) {
             frame = null; canvas = null; displayFrame = null; displayCanvas = null
+            backgroundFrame = null; backgroundCanvas = null
         }
     }
 

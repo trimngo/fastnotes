@@ -1,3 +1,41 @@
+# 0.3.2-test10 SoftSolution buffer validation
+
+5 November 2026. The full Android verification command completed successfully:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+The full run passed 124 tests. One additional production backend-reader test was
+then added and the complete unit suite rerun: **125 tests passed**, no failures,
+errors or skips. Lint reports no errors (50 warnings and 1 hint); debug/release
+compile. No production source changed between these runs. USB collector fixture
+and diff checks also pass. Independent review found no blocking ownership,
+locking, cleanup or unsupported-mode fallback issue.
+
+Coverage includes the native identity-or-role replacement contract, retaining
+both native layers through startup/completion, live foreground pixels before UP,
+background stability during a new stroke, completed snapshot/failure handling,
+and production reading of `ro.eink.type=SoftSolution` before service connection.
+Unsupported System selection keeps Android live fallback usable. Existing input,
+eraser, rotation/focus, storage and updater cases continue passing.
+
+USB confirms test9 and 982 system policy callbacks while its System ink fails.
+The user confirms SoftSolution. Cross-ABI static inspection establishes the
+native buffer contract violation, not measured physical improvement. The next
+tablet check is **Worker refresh**, then the normal notebook and landscape
+split-screen. Exact pressure matching and physical latency remain open. See
+[current findings](SOFTSOLUTION_FINDINGS.md).
+
+APK identity:
+
+- `dev.fastnotes`, version `0.3.2-test10`, code 14; minimum API 29, target API 30
+- Same note format and signing certificate; update installs in place
+- Bytes: `7954904`
+- SHA-256: `dc2c059ac88c09901a7011ffe5ea089c2896f384057d0604338b5668d48baa5e`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
 # Read-only USB collector validation
 
 5 November 2026. Host-only fixture and Bash syntax checks passed for

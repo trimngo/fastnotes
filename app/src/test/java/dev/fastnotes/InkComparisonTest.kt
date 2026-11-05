@@ -79,6 +79,34 @@ class InkComparisonTest {
         return image.getPixel(150, 100)
     }
 
+    @Test fun unsupportedSystemModeExplainsTheBackendAndKeepsAndroidInkVisible() {
+        val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
+        val activity = lifecycle.get()
+        fun descendants(view: View): Sequence<View> = sequence {
+            yield(view)
+            if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
+        }
+        val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        root.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, 400, 800)
+        var connections = 0
+        val probe = SystemInkProbe({}, { SystemInkDevice("Viwoods AiPaper", "3.15.15", 33, "SoftSolution") },
+            { connections++; ActivitySystemInkBinder() })
+        InkTestActivity::class.java.getDeclaredField("systemProbe").apply { isAccessible = true }.set(activity, probe)
+        descendants(root).filterIsInstance<Button>().single { it.text == "System ink" }.performClick()
+        assertEquals(0, connections)
+        assertTrue(descendants(root).filterIsInstance<TextView>().any {
+            it.text.contains("unavailable on SoftSolution") && it.text.contains("Worker refresh")
+        })
+        val paper = descendants(root).filterIsInstance<InkTestView>().single()
+        paper.layout(0, 0, 400, 400)
+        assertFalse(paper.firmwareTest)
+        stroke(paper, complete = true)
+        assertTrue(Color.red(pixel(paper)) < 80)
+        lifecycle.pause().stop().destroy()
+    }
+
     @Test fun firmwareTestHasNoAppDrawnInkUntilTheDocumentedQuietDelay() {
         val lifecycle = Robolectric.buildActivity(android.app.Activity::class.java).setup().visible()
         val view = InkTestView(lifecycle.get())

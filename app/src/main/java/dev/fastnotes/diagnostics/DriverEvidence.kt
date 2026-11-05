@@ -3,6 +3,7 @@ package dev.fastnotes.diagnostics
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
+import dev.fastnotes.ink.EinkBackend
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -76,6 +77,7 @@ class DriverEvidence internal constructor(
         }
         val data = JSONObject().put("schema", 1).put("model", Build.MODEL).put("board", Build.BOARD)
             .put("hardware", Build.HARDWARE).put("kernelVersion", read(kernelVersion, null, 4096) ?: JSONObject.NULL)
+            .put("einkType", EinkBackend.readType() ?: JSONObject.NULL)
         val device = JSONObject().put("node", "/dev/t1000_spi")
         data.put("device", device)
         val numbers = try { deviceNumbers() } catch (failure: Exception) {

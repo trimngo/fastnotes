@@ -102,6 +102,7 @@ class NativeBufferProbeTest {
     @Test fun invalidOrOversizedGeometryIsRejectedBeforeNativeInitialization() {
         assertFalse(probe.start(NativeBufferMode.DISPLAY, canvas, Rect(1, 1, 40, 40), display, 2))
         assertFalse(probe.start(NativeBufferMode.DISPLAY, canvas, visible, Rect(0, 0, 4000, 4000), 2))
+        assertFalse(probe.start(NativeBufferMode.DISPLAY, canvas, visible, Rect(0, 0, 3000, 2200), 2))
         assertFalse(probe.start(NativeBufferMode.DISPLAY, canvas, visible, display, 0))
         assertEquals(0, factories)
         assertNull(fake.input)

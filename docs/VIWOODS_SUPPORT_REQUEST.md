@@ -1,127 +1,45 @@
-# Draft technical request for Viwoods
+# Draft technical request for Viwoods: SoftSolution handwriting
 
-Prepared from the user's device evidence; **not sent**. Built-in Notes is smooth;
-test3's two buffer layouts both produced no live ink. Test4's modes both remain
-Gaps / lag and the user says they look essentially the same.
+Prepared from the user's exact-device evidence; **not sent**. This replaces the
+earlier request based on the T1000 branch, which is not selected on this device.
 
-We are developing Fastnotes (`dev.fastnotes`), an offline Android handwriting
-notepad for full-size Viwoods AiPaper. Device: Android 13/API 33, build/firmware
-3.15.15, natural display 1920×2560. Current sideloaded compatibility target is
-API 30. The desired workflow is portrait and landscape, including Chrome left /
-Fastnotes right in Android split-screen, with the original stylus and eraser.
+Fastnotes (`dev.fastnotes`) is an offline handwriting notepad for full-size
+Viwoods AiPaper, Android 13/API 33, build 3.15.15, 1920×2560. The user's USB
+report identifies hardware mt8788, board platform mt6771, kernel
+4.19.191-g1add12f05208. They separately confirmed `ro.eink.type=SoftSolution`.
+Target API 30 is currently retained for ENote compatibility. Workflow includes
+portrait, both landscape rotations and Chrome-left/Fastnotes-right split-screen.
 
-Rapid continuous handwriting through ENote pen callbacks and app-rendered ARGB
-bitmaps shows missing live sections that fill later. Native callbacks and FAST
-mode 4 are confirmed in device reports. The user observes similar problems in
-ForestNote. Our paced bitmap changes did not resolve the physical behavior.
-The user confirmed the built-in Viwoods Notes app draws the same pattern smoothly.
+Built-in Notes draws smoothly. The ENote bitmap route previously showed rapid
+stroke gaps that filled later. A scoped System auto-draw comparison produced
+982 system-server policy callbacks in 15 seconds but no live drawing; built-in
+Notes produced none of that marker. The selected SoftSolution native backend
+inherits empty auto-draw/region methods, despite the DEX containing a T1000 policy.
+The T1000-specific pressure/device-interface analysis does not describe the
+selected backend and does not establish a need to retrieve a T1000 driver.
 
-An isolated comparison also produced **No live ink** in both layouts:
+Static inspection of exact-device libpaintworker revealed a concrete Fastnotes
+bug: native registration deduplicates by bitmap identity OR layer role, while we
+registered one object as foreground and background. Test10 uses separate owned
+bitmaps, preserves both roles and updates completed background at handoff. This
+contract correction is software-verified; its physical effect awaits tablet tests.
+No OEM code is executed, bundled or attached to this public request.
 
-| Buffer | Native callbacks | Accepted samples | Refreshes | Mode | Longest refresh call |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Pane 1920×1851 at (0,549) | 5,179 | 4,220 | 2,105 | FAST 4 | 129,467 µs |
-| Display 1920×2560 at (0,0) | 3,008 | 2,149 | 1,081 | FAST 4 | 105,470 µs |
+Could you provide the supported SoftSolution contract for:
 
-Those calls ran on a presentation worker. We then tested the inspected community
-reference's sequence: render/end on the pen-callback thread, writing enabled at
-startup without re-enabling on each DOWN. The report confirms callback/render/end
-all on thread 65, with 1,112 accepted/presented samples and maximum call 11,748 µs;
-the user still selected Gaps / lag. They explicitly said the worker and reference
-look essentially the same. The timings above are call durations, not visible
-panel latency. We are collecting readable exact-device API implementation files
-to inspect the missing presentation contract; none are bundled in the app.
+1. Ordinary third-party use of ENote bitmaps and WritingProducer, including any
+   permissions, ownership and supported initialization/release sequence?
+2. Foreground/background pixel format, alpha and `0xFFFEFEFE` sentinel semantics,
+   buffer lifetime, synchronization and partial-damage requirements?
+3. Correct onWritingStart/onWritingEnd and setWritingEnabled behavior during a
+   stroke, idle, focus loss, rotation and resizable split-screen windows?
+4. Pressure normalization and stock brush geometry/smoothing on SoftSolution:
+   is this implemented in the Notes pen renderer, and is a supported brush API
+   available to third-party applications?
+5. Supported observation of native surface readiness/ownership, failed queued
+   presentation and input-to-visible-ink timing without global setting changes?
 
-On this firmware the app can reflect `ENoteSetting.setViewAutoDrawEnabled(View,
-boolean)` and `getInstance(Context)`. Both returned without exceptions in an
-isolated scratch test, but the user observed no live ink: only the deliberately
-delayed Android fallback. The app received 1,026 Android samples with maximum
-event age 7 ms; this does not measure visible panel latency. No corresponding
-T1000 AutoDraw enable getter is exposed, so that flag was left unchanged.
-`getAutoDrawToolType()` returned -1, whose meaning we have not established.
-`addAutoDrawRect` / `removeAutoDrawRect` are not exposed by app-side reflection;
-the ROM `IENoteSetting` interface exposes no declared methods to this app.
-
-Could you provide the supported handwriting integration or clarify:
-
-1. Which API, permissions/app optimization and lifecycle should an ordinary
-   third-party application use for low-latency ink on this full-size firmware?
-2. Does view AutoDraw require other flags or an app allowlist? What do its scoped
-   enable/disable calls and the -1 tool result mean?
-3. For `setWritingJavaBitmap` and its background equivalent, what buffer size,
-   pixel layout, screen origin and orientation are required in full-screen and
-   right-hand landscape split-screen windows? Are full-display buffers required?
-4. Are any thread-affinity, enable-transition or stroke transaction requirements
-   imposed on bitmap registration, `renderWriting` or `onWritingEnd`?
-5. How should foreground/background handoff, erasing, scrolling and focus changes
-   be handled, and is there a firmware update addressing incomplete live strokes?
-
-The reproducible scratch comparison and source are at
-https://github.com/trimngo/fastnotes. Test4 compares callback and worker execution
-with full-display buffers and visible-pane clipping. It records thread IDs and
-the user's actual visual result separately from call/counter success. No saved
-notes or handwriting content need be shared to reproduce the issue.
-
-
-## Exact-device evidence added 4 November 2026
-
-The user exported framework/services implementation from full-size 3.15.15.
-Static inspection confirms setViewAutoDrawEnabled is empty, both public
-unwrite-rectangle wrappers remove a region, while the actual service add-region
-protocol is implemented. An opt-in, build-pinned per-PID region test is prepared
-without app-side ENoteWriting initialization or global setting changes. Physical
-service access and visible ink remain unverified. Please confirm the supported
-third-party scoped API and cleanup/rotation/split-screen contract. Vendor code
-and the user's ZIP are not included in this public draft. This request remains
-**unsent**.
-
-
-## Positive System ink observation and follow-up
-
-The user now reports test6 System ink works quite well during live writing.
-They observe disappearance around one second after pen-up and a fixed-width
-replacement without the native pressure variation. The diagnostic delayed replay
-until 1,000 ms while the native policy clears after 800 ms; replay was fixed-width.
-Test7 prepares completed Android ink immediately and preserves pressure variation
-with an explicitly estimated brush. Exact native pressure normalization/curve,
-smoothing and width units remain questions for the supported API contract.
-
-The user also reports loss of System ink selection when switching to Chrome in
-landscape split-screen. The manual diagnostic stopped on focus loss; test7 retains
-selection, removes the region while inactive, and resumes after focused stable
-geometry. Native libraries omitted by the first export are prioritized in a new
-explicit export for static inspection. This draft remains **unsent**.
-
-
-## Native pressure and idle-start questions (5 November 2026)
-
-Both exact-device libpaintworker ABIs forward raw pressure to the T1000 device
-interface; width limits are separate. Could you supply the pressure normalization,
-curve and smoothing contract for exact completed-stroke replay? The server's
-InputWorker jump count is configured to 4, forwarding one of five MOVE/HOVER
-candidates; is there a supported scoped control for that worker's sampling?
-
-The user now confirms completed ink stays visible, but sometimes first ink
-hesitates after idle with focus unchanged. Built-in Notes starts immediately.
-The T1000 policy clears its temporary drawing state 800 ms after UP. What is the
-supported idle-to-writing readiness or hover preparation contract for third-party
-AutoDraw? No OEM binaries are attached to this public draft. It remains **unsent**.
-
-## Continued live-ink failure and driver identity (5 November 2026)
-
-The user now reports no live System ink, only completed Android replay after
-pen-up, including after a tablet restart. Restoring the earlier test7 writing
-source/layout in test9 did not establish recovery. The newest attached report
-is from test8 and does not independently verify the currently installed version.
-Built-in Notes previously drew smoothly under the same fast-stroke comparison.
-
-The explicit read-only driver export identifies hardware `mt8788`, but captures
-no matching module, kernel version or device-node identity from the ordinary app
-process. Exception types alone cannot distinguish missing files from access
-denial. Please provide the matching `/dev/t1000_spi` driver/controller source or
-supported interface contract for full-size AiPaper build 3.15.15, and a supported
-way to observe effective AutoDraw regions/input readiness. The inspected native
-pressure setter forwards raw pressure with a lower clamp; the pressure-to-width
-mapping remains downstream and unrecovered. The app is not attempting device
-ioctls or global-state resets. A read-only USB input-callback comparison is being
-prepared. This request remains **unsent**.
+Source and independent findings: https://github.com/trimngo/fastnotes
+See docs/SOFTSOLUTION_FINDINGS.md for evidence and limits. No notes, raw pen
+coordinates, OEM binaries or device serials are needed in the initial request.
+This draft remains **unsent**.

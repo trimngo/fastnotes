@@ -23,6 +23,7 @@ import android.widget.Toast
 import dev.fastnotes.BuildConfig
 import dev.fastnotes.FastnotesApp
 import dev.fastnotes.ink.panelOrientation
+import dev.fastnotes.ink.EinkBackend
 import dev.fastnotes.updates.UpdateActivity
 
 /** Runs in :inktest. Scratch images and native edits never enter NoteStore. */
@@ -105,7 +106,9 @@ class InkTestActivity : Activity() {
             "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. System ink provides live writing; the app redraws completed strokes at pen-up with pressure variation. Watch the pen-up transition, then Copy report. Worker and Reference modes keep their earlier one-second delay."
+            text = if (EinkBackend.readType() == "SoftSolution")
+                "This tablet uses SoftSolution. Select Worker refresh to test native live ink with separate foreground/background buffers. Reference callback compares execution timing. Android replay waits one second after pen-up. System auto-draw is unavailable on this backend."
+            else "Temporary scratchpad. System ink requests firmware live writing; the app redraws completed strokes at pen-up with pressure variation. Watch the pen-up transition, then Copy report. Worker and Reference modes keep their earlier one-second delay."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -189,7 +192,12 @@ class InkTestActivity : Activity() {
         } else {
             registeredGeometry = null
             systemStartFailed = true
-            status.text = "Select System ink to retry. ${systemProbe.status}"
+            if (systemProbe.unsupportedBackend) {
+                systemSelected = false
+                modeLabel = "Android pen (System auto-draw unavailable)"
+                paper.mode(false)
+                status.text = systemProbe.status
+            } else status.text = "Select System ink to retry. ${systemProbe.status}"
         }
     }
 
@@ -287,6 +295,7 @@ class InkTestActivity : Activity() {
     private fun report(): String = buildString {
         append("Fastnotes ${BuildConfig.VERSION_NAME} ink investigation\n")
         append("Model: ${Build.MODEL}\nAndroid: ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\nBuild: ${Build.DISPLAY}\n")
+        append("E-ink backend: ${EinkBackend.readType() ?: "unavailable"}\n")
         append("Target: ${applicationInfo.targetSdkVersion}; split-screen: $isInMultiWindowMode\n")
         val geometry = geometry()
         append("Display: ${geometry?.display?.toShortString()}; rotation ${geometry?.rotation}\n")

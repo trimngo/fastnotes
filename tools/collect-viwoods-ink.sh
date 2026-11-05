@@ -106,7 +106,7 @@ EOF
 { bounded_adb shell 'printf "kernel.release="; uname -r
 printf "kernel.version="; uname -v
 printf "kernel.machine="; uname -m
-for prop in ro.product.model ro.build.display.id ro.hardware ro.board.platform ro.build.version.sdk; do
+for prop in ro.product.model ro.build.display.id ro.hardware ro.board.platform ro.build.version.sdk ro.eink.type; do
     printf "%s=" "$prop"; getprop "$prop"
 done
 printf "system_server.pid="; pidof system_server

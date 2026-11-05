@@ -1,5 +1,21 @@
 # Fastnotes: priorities and future ideas
 
+Current native investigation: [SoftSolution backend and test10 buffer fix](docs/SOFTSOLUTION_FINDINGS.md).
+
+### SoftSolution correction (0.3.2-test10)
+
+- USB confirms 982 System drawing-policy callbacks in failing test9. The user
+  confirmed `ro.eink.type=SoftSolution`; this backend's System auto-draw methods
+  are empty. Earlier T1000 driver/pressure explanations do not describe this
+  tablet's active path.
+- Native registry inspection found same-bitmap foreground/background replacement.
+  Test10 retains distinct foreground and completed-background bitmaps in the
+  normal notebook and comparison modes, with no full background copy on MOVE.
+- Report the selected backend and block unsupported System auto-draw. Test
+  Worker refresh and the normal notebook on the actual device before claiming
+  improved gaps, latency or split-screen reliability. Saved-note format remains
+  unchanged; exact pressure matching remains open.
+
 Recorded from the user's ideas on 30 October 2026.
 
 ## First milestone: get the basics right

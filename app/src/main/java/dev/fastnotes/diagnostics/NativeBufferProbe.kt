@@ -55,8 +55,8 @@ class NativeBufferProbe internal constructor(
             panelDirection = orientation
             val width = bufferBounds.width()
             val height = bufferBounds.height()
-            // Two native copies and one temporary source: at most 96 MB of ARGB pixels.
-            require(width.toLong() * height <= 8_000_000) { "Display too large for this experiment" }
+            // Preview, distinct native foreground/background, and temporary source: at most 96 MB.
+            require(width.toLong() * height <= 6_000_000) { "Display too large for this experiment" }
             checkpoint("${mode.label}: allocating ${width}x$height ARGB buffer at ${bufferBounds.left},${bufferBounds.top}; clip ${visible.toShortString()}; orientation $orientation")
             source = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val note = Note(pageWidth = width.toFloat(), penWidth = 3f,

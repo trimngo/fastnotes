@@ -22,6 +22,8 @@ interface FakeNativeListener {
 
 /** API contract fake, not a claim about physical firmware. */
 class FakePanel {
+    private data class Buffer(val kind: Int, val bitmap: Bitmap)
+    private val buffers = ArrayList<Buffer>()
     var enabled = false
     var foreground: Bitmap? = null
     var background: Bitmap? = null
@@ -31,6 +33,7 @@ class FakePanel {
     private fun trace(name: String) { trace.add(name to Thread.currentThread().id) }
     var rendered = ArrayList<Rect>()
     var fail = false
+    var failBackground = false
     var input: FakeNativeListener? = null
     var starts = 0
     var ends = 0
@@ -40,9 +43,24 @@ class FakePanel {
     var resumeRender: CountDownLatch? = null
     fun setWritingJavaBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) {
         trace("bitmap")
-        foreground = bitmap; foregroundBounds = Rect(x, y, x + bitmap.width, y + bitmap.height); nativeOrientation = rotation
+        register(1, bitmap)
+        foregroundBounds = Rect(x, y, x + bitmap.width, y + bitmap.height); nativeOrientation = rotation
     }
-    fun setWritingJavaBackgroundBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) { background = bitmap }
+    fun setWritingJavaBackgroundBitmap(bitmap: Bitmap, rotation: Int, x: Int, y: Int) {
+        check(!failBackground)
+        register(0, bitmap)
+    }
+    private fun register(kind: Int, bitmap: Bitmap) {
+        // Recovered ENote contract: an existing identity OR kind replaces that entry.
+        // In particular, reusing foreground as background removes the foreground layer.
+        val index = buffers.indexOfFirst { it.bitmap === bitmap || it.kind == kind }
+        if (index < 0) buffers.add(Buffer(kind, bitmap)) else buffers[index] = Buffer(kind, bitmap)
+        refreshBuffers()
+    }
+    private fun refreshBuffers() {
+        foreground = buffers.firstOrNull { it.kind == 1 }?.bitmap
+        background = buffers.firstOrNull { it.kind == 0 }?.bitmap
+    }
     fun setWritingEnabled(value: Boolean) { trace("enable=$value"); enabled = value }
     fun setWritingInputlistener(listener: FakeNativeListener?) {
         input = listener
@@ -59,14 +77,14 @@ class FakePanel {
     }
     fun onWritingStart() { trace("start"); starts++ }
     fun onWritingEnd() { trace("end"); ends++ }
-    fun releaseWritingJavaBitmap() { foreground = null }
-    fun releaseWritingJavaBackgroundBitmap() { background = null }
+    fun releaseWritingJavaBitmap() { buffers.removeAll { it.kind == 1 }; refreshBuffers() }
+    fun releaseWritingJavaBackgroundBitmap() { buffers.removeAll { it.kind == 0 }; refreshBuffers() }
     fun emit(action: Int, x: Int, y: Int, tool: Int = 2, pressure: Int = 1024, buttons: Int = 0) {
         input?.onInput(x, y, pressure, 0f, tool, action, 0, buttons)
     }
     fun reset() {
         enabled = false; foreground = null; background = null; foregroundBounds = null; nativeOrientation = 0; rendered.clear()
-        fail = false; input = null; starts = 0; ends = 0; pictureMode = 3
+        buffers.clear(); fail = false; failBackground = false; input = null; starts = 0; ends = 0; pictureMode = 3
         renderStarted = null; resumeRender = null
         listenerBindings = 0; trace.clear()
     }
@@ -132,6 +150,54 @@ class PanelTest {
         assertEquals(1, fake.ends)
         assertTrue(fake.rendered.isNotEmpty())
         panel.stop()
+    }
+
+    @Test fun completedBackgroundRemainsSeparateAndStableUntilTheStrokeIsCommitted() {
+        start()
+        val foreground = fake.foreground!!
+        val background = fake.background!!
+        assertNotSame(source, foreground)
+        assertNotSame(source, background)
+        assertNotSame(foreground, background)
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+        fake.emit(MotionEvent.ACTION_MOVE, 250, 253)
+        scheduler.runCurrent()
+        assertEquals(Color.BLACK, foreground.getPixel(80, 123))
+        assertEquals(Color.WHITE, background.getPixel(80, 123))
+        fake.emit(MotionEvent.ACTION_UP, 300, 303)
+        scheduler.runUntilIdle()
+        // Presentation alone does not commit the underlying background.
+        assertEquals(Color.WHITE, background.getPixel(80, 123))
+        panel.drainEdits()
+        panel.acknowledge()
+        assertSame(foreground, fake.foreground)
+        assertSame(background, fake.background)
+        assertEquals(Color.BLACK, background.getPixel(80, 123))
+        fake.emit(MotionEvent.ACTION_DOWN, 400, 403)
+        scheduler.runUntilIdle()
+        assertTrue(Color.red(foreground.getPixel(280, 323)) < 220)
+        assertEquals(Color.WHITE, background.getPixel(280, 323))
+        panel.stop()
+        assertNull(fake.foreground)
+        assertNull(fake.background)
+    }
+
+    @Test fun completedBackgroundFailureStopsTheSessionWithoutDiscardingTheCommittedEdit() {
+        start()
+        var failures = 0
+        panel.onFailure = { failures++ }
+        fake.emit(MotionEvent.ACTION_DOWN, 200, 203)
+        fake.emit(MotionEvent.ACTION_UP, 300, 303)
+        assertEquals(1, panel.drainEdits().size)
+        panel.acknowledge()
+        fake.failBackground = true
+        scheduler.runUntilIdle()
+        assertFalse(panel.active)
+        assertEquals(1, failures)
+        assertTrue(panel.status.contains("handoff failed"))
+        panel.stop()
+        assertNull(fake.foreground)
+        assertNull(fake.background)
     }
 
     @Test fun renderingIsClippedToOurFrozenWindowAndOutsidePenDownIsIgnored() {

@@ -57,6 +57,8 @@ class CallbackPresentationTest {
         assertEquals(callback.id, panel.lastRenderThread)
         assertEquals(callback.id, panel.lastEndThread)
         assertTrue(Color.red(fake.foreground!!.getPixel(200, 253)) < 16)
+        assertNotSame(fake.foreground, fake.background)
+        assertTrue(Color.red(fake.background!!.getPixel(200, 253)) < 16)
         assertTrue(fake.rendered.all(visible::contains))
         assertEquals(1, panel.drainEdits().size)
         panel.acknowledge()

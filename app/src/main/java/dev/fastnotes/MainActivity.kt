@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import dev.fastnotes.ink.InkView
+import dev.fastnotes.ink.EinkBackend
 import dev.fastnotes.ink.Tool
 import dev.fastnotes.model.Note
 import dev.fastnotes.updates.UpdateActivity
@@ -396,6 +397,7 @@ class MainActivity : Activity() {
             "\nAndroid: " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")" +
             "\nApp compatibility target: API " + applicationInfo.targetSdkVersion +
             "\nSystem build: " + Build.DISPLAY +
+            "\nE-ink backend: " + (EinkBackend.readType() ?: "unavailable") +
             "\nReported AiPaper firmware: 3.15.15" +
             "\n\n" + paper.engineDescription +
             "\n" + paper.nativeDiagnostics +

@@ -1,5 +1,13 @@
 # Native ink findings from the second device export
 
+**Correction, 5 November 2026:** the user confirmed `ro.eink.type=SoftSolution`.
+The T1000-specific pressure/clear analysis below describes an inactive branch on
+this tablet and must not be treated as its driver contract. The USB comparison
+also revealed a concrete foreground/background registration bug in Fastnotes.
+See [SoftSolution findings and test10](SOFTSOLUTION_FINDINGS.md) for the current
+backend, evidence and implementation. Exact pressure matching remains unresolved;
+retrieving a T1000 driver is no longer the next investigation for this device.
+
 5 November 2026. Full-size Viwoods AiPaper, Android 13/API 33, build 3.15.15.
 The user's test7 ZIP supplied both native libraries, plus the same framework and
 service DEX units as the first export. Each artifact matched its manifest hash.

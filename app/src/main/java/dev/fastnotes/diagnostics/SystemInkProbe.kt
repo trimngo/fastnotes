@@ -4,8 +4,9 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
+import dev.fastnotes.ink.EinkBackend
 
-internal data class SystemInkDevice(val model: String, val build: String, val api: Int)
+internal data class SystemInkDevice(val model: String, val build: String, val api: Int, val einkType: String? = null)
 
 /**
  * Scoped IPC contract verified from this device's 3.15.15 framework and service.
@@ -17,7 +18,7 @@ class SystemInkProbe internal constructor(
     private val connect: () -> IBinder?
 ) {
     constructor(checkpoint: (String) -> Unit = {}) : this(checkpoint,
-        { SystemInkDevice(Build.MODEL, Build.DISPLAY, Build.VERSION.SDK_INT) },
+        { SystemInkDevice(Build.MODEL, Build.DISPLAY, Build.VERSION.SDK_INT, EinkBackend.readType()) },
         {
             Class.forName("android.os.ServiceManager")
                 .getMethod("getService", String::class.java)
@@ -28,10 +29,13 @@ class SystemInkProbe internal constructor(
     private var registered: Rect? = null
     private var stage = "Not started"
     val hasRegistration get() = registered != null
+    var unsupportedBackend = false
+        private set
     var status = "System ink has not been requested."
         private set
 
     fun start(rect: Rect): Boolean {
+        unsupportedBackend = false
         if (!stop()) {
             status = "Previous system ink cleanup is unconfirmed. Close this test."
             return false
@@ -41,9 +45,15 @@ class SystemInkProbe internal constructor(
             return false
         }
         val current = device()
-        if (current != SUPPORTED_DEVICE) {
+        if (current.copy(einkType = null) != SUPPORTED_DEVICE) {
             status = "System ink protocol is verified only for Viwoods AiPaper, Android 13/API 33, build 3.15.15."
             record("System ink blocked: device/build does not match inspected protocol")
+            return false
+        }
+        if (current.einkType == "SoftSolution") {
+            unsupportedBackend = true
+            status = "System auto-draw is unavailable on SoftSolution. Select Worker refresh or Reference callback."
+            record(status)
             return false
         }
         return try {

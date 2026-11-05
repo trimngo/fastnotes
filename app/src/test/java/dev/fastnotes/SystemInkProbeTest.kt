@@ -2,6 +2,7 @@ package dev.fastnotes
 
 import android.graphics.Rect
 import android.os.Binder
+import android.os.Build
 import android.os.Parcel
 import dev.fastnotes.diagnostics.SystemInkDevice
 import dev.fastnotes.diagnostics.SystemInkProbe
@@ -10,6 +11,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowBuild
+import org.robolectric.shadows.ShadowSystemProperties
+import org.robolectric.util.ReflectionHelpers
 
 private class SystemInkBinder(descriptor: String = SystemInkProbe.DESCRIPTOR) : Binder() {
     data class Call(val code: Int, val rect: Rect, val flags: Int)
@@ -47,6 +51,39 @@ private class SystemInkBinder(descriptor: String = SystemInkProbe.DESCRIPTOR) : 
 @Config(sdk = [33])
 class SystemInkProbeTest {
     private val supported = SystemInkDevice("Viwoods AiPaper", "3.15.15", 33)
+
+    @Test fun productionProbeReadsTheFirmwareBackendBeforeConnecting() {
+        ShadowBuild.setModel("Viwoods AiPaper")
+        ReflectionHelpers.setStaticField(Build::class.java, "DISPLAY", "3.15.15")
+        ShadowSystemProperties.override("ro.eink.type", "SoftSolution")
+        val probe = SystemInkProbe()
+        assertFalse(probe.start(Rect(0, 0, 100, 100)))
+        assertTrue(probe.unsupportedBackend)
+        assertFalse(probe.hasRegistration)
+        assertTrue(probe.status.contains("SoftSolution"))
+    }
+
+    @Test fun softSolutionNeverRegistersTheNoOpSystemDrawingPath() {
+        var connections = 0
+        val stages = ArrayList<String>()
+        val probe = SystemInkProbe(stages::add, { supported.copy(einkType = "SoftSolution") },
+            { connections++; SystemInkBinder() })
+        assertFalse(probe.start(Rect(0, 0, 100, 100)))
+        assertEquals(0, connections)
+        assertFalse(probe.hasRegistration)
+        assertTrue(probe.unsupportedBackend)
+        assertTrue(probe.status.contains("SoftSolution"))
+        assertTrue(probe.status.contains("Worker refresh"))
+    }
+
+    @Test fun t1000BackendStillUsesTheVerifiedScopedProtocol() {
+        val service = SystemInkBinder()
+        val probe = SystemInkProbe({}, { supported.copy(einkType = "T1000") }, { service })
+        assertTrue(probe.start(Rect(0, 0, 100, 100)))
+        assertFalse(probe.unsupportedBackend)
+        assertTrue(probe.stop())
+        assertEquals(listOf(0x18, 0x19), service.calls.map { it.code })
+    }
 
     @Test fun exactProtocolRegistersCopiedRectAndReleasesOnlyThatRect() {
         val service = SystemInkBinder()

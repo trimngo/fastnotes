@@ -99,14 +99,32 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: read-only USB comparison
+## Current step: SoftSolution buffer fix (0.3.2-test10)
 
-The user reports live System ink still fails, including after a tablet restart,
-and can connect a Mac/Linux computer. Use the [USB collector guide](USB_INK_DIAGNOSTICS.md)
-to compare the firmware's existing policy callback during the failing System
-test and built-in Notes. No further APK or global-setting variation is prepared
-without evidence locating the failure. The latest app export is from test8 and
-contains no driver module; the USB metadata also records the installed version.
+USB captured 982 System policy callbacks in Fastnotes and none of that marker
+in built-in Notes. The user confirmed `ro.eink.type=SoftSolution`; this backend's
+System auto-draw implementation is empty. Inspecting the correct native bitmap
+route identified a foreground/background registration bug, corrected in test10.
+See [the exact findings](SOFTSOLUTION_FINDINGS.md).
+
+1. Update in place using **Ink Test → Updates → Check now**. Do not uninstall.
+2. Select **Worker refresh**, which uses the native bitmap/surface path. Draw
+   rapid continuous up/down strokes in portrait. Judge the ink **while moving**;
+   the scratchpad's completed Android snapshot still waits one second after UP.
+   Select the observed result and Copy report. Backend should say SoftSolution.
+3. Check dots, pen-up continuity and the first stroke after a short pause. Then
+   compare **Reference callback**, which uses the same corrected distinct layers
+   while executing presentation on the callback thread.
+4. Test the normal notebook, which receives the same buffer fix. Check the
+   original pen/eraser, undo/redo, saving and reopening. Repeat both landscape
+   rotations and Chrome-left/Fastnotes-right split-screen/focus return.
+
+System ink now explains that it is unavailable on SoftSolution and keeps Android
+fallback usable rather than accepting a drawing path that performs no draw.
+This release corrects a proven native buffer contract; physical latency/gaps are
+not established by software checks. No extra USB capture is required before
+testing this change. Existing [USB instructions](USB_INK_DIAGNOSTICS.md) remain
+available for further diagnosis if the actual native renderer still fails.
 
 ## Source rollback attempted (0.3.2-test9)
 
