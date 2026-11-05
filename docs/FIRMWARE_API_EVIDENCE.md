@@ -8,7 +8,7 @@ or obtaining the supported vendor integration contract.
 
 ## Save the ZIP
 
-1. Update to **0.3.2-test8** through Ink Test → Updates → Check now.
+1. Update to **0.3.2-test9** through Ink Test → Updates → Check now.
 2. Open **Fastnotes Ink Test → API files → Save ZIP**.
 3. Choose **Downloads** in Android's file picker and tap **Save**.
 4. Attach **fastnotes-api-evidence.zip** in the investigation conversation.
@@ -86,3 +86,8 @@ Native files are inspected statically for the pressure implementation. Their
 presence does not guarantee the exact curve is recoverable: libpaintworker may
 forward pressure into another dependency, kernel driver or controller firmware.
 No OEM library is loaded into the app or executed by the investigation tools.
+
+
+Test9 restores test7's writing screen after a reported live-ink regression in the
+test8 hover experiment. This driver/API exporter is retained unchanged and runs
+only when Save ZIP is selected.

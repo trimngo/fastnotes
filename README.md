@@ -1,14 +1,13 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test8 investigates the first stroke after idle**.
-The user confirms completed ink now stays visible, but sometimes its next stroke
-hesitates after a pause while built-in Notes starts immediately. An optional
-hover preparation requests one completed-ink frame when the pen returns after
-idle, with input diagnostics for comparison. Its effect on physical latency is
-unverified. The working System ink backend and focus recovery are retained.
-The native library forwards pressure to the T1000 driver; an exact replay curve
-was not recovered from the exported files.
+keeps notes offline. **0.3.2-test9 restores the test7 System ink baseline**.
+The user reports test8 lost live ink with hover preparation both on and off,
+showing ink only after pen-up. The writing Activity, view and matching integration
+tests are restored byte-for-byte from test7, including its layout, pressure-aware
+completion and focus recovery. Driver export from test8 is retained. Actual live
+ink recovery still requires device verification; the intermittent idle-start
+hesitation and exact pressure-curve matching remain unresolved.
 See [native pressure/latency findings](docs/NATIVE_INK_FINDINGS.md),
 [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
 [the investigation](docs/INK_INVESTIGATION.md).

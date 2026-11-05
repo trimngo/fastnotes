@@ -99,7 +99,30 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: first stroke after idle (0.3.2-test8)
+## Current step: restore live ink (0.3.2-test9)
+
+The user reports test8 shows ink only after pen-up, with hover preparation both
+on and off. This is a live-ink regression; the completed Android replay does not
+establish working firmware presentation. Test9 restores the exact test7 writing
+Activity/view/layout and keeps test8's driver export. No new rendering or timing
+variation is introduced in this recovery build.
+
+1. Update through **Ink Test → Updates → Check now** and select **System ink**.
+2. Begin in portrait and check for complete ink **while the pen is moving**.
+   Then lift and check that completed ink remains visible. Record the result and
+   **Copy report**, including a failed/paused status if live ink is still absent.
+3. If live drawing has returned, repeat landscape and Chrome-left/Fastnotes-right
+   split-screen. Check focus return as in test7. First-stroke idle hesitation is
+   still an open issue; do not infer a fix from this rollback.
+4. **API files → Save ZIP** still collects driver metadata and readable matching
+   modules for exact pressure/driver analysis. It runs only on explicit export.
+
+The writing source files are identical to test7. That is software evidence, not
+proof of physical recovery: native service state, queued region application and
+the actual panel remain device-side. A report from the failing test8 session is
+useful for distinguishing paused registration from failed live presentation.
+
+## Earlier idle-start experiment (0.3.2-test8, live-ink regression)
 
 The user confirms test7 completed ink stays visible. They now report a first-
 stroke hesitation after a pause without changing focus; built-in Notes starts

@@ -217,3 +217,15 @@ The order among the later ideas is undecided. The first priority remains
   module files under fixed roots. No root, device ioctl or boot-image read.
   Physical availability and whether the curve is in driver vs controller remain
   unresolved until inspection of that evidence.
+
+
+### Live-ink recovery (0.3.2-test9)
+
+- User reports test8 has no live System ink with either hover-checkbox state;
+  only completed replay appears after lifting. Remove the experiment.
+- Restore exact test7 Activity/view/layout and integration tests; retain isolated
+  driver/API export. Do not claim the source rollback proves physical recovery.
+- Pending: restored live ink, completion and split-screen focus checks, plus a
+  report from failing test8 if available. Idle first-stroke hesitation and exact
+  pressure matching remain open; avoid more latency changes until live baseline
+  is working again.

@@ -15,7 +15,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.RadioButton
 import android.widget.TextView
 import dev.fastnotes.diagnostics.NativeBufferProbe
@@ -159,7 +158,6 @@ class InkComparisonTest {
             assertTrue(report.contains("System ink: System writing area accepted"))
             assertTrue(report.contains("User observed ink while moving: Smooth"))
             assertTrue(report.contains("Scratch handoff: Completed strokes at pen-up"))
-            assertTrue(report.contains("Hover preparation enabled: true"))
             layout(600)
             assertTrue(probe.hasRegistration)
             lifecycle.windowFocusChanged(false)
@@ -354,13 +352,10 @@ class InkComparisonTest {
         }
         try {
             layout(); layout()
-            descendants(lifecycle.get().findViewById(android.R.id.content)).filterIsInstance<CheckBox>().single().isChecked = false
             descendants(lifecycle.get().findViewById(android.R.id.content)).filterIsInstance<Button>().single { it.text == "System ink" }.performClick()
             assertEquals(1, service.adds)
             lifecycle.recreate().visible().windowFocusChanged(true)
             val restoredPaper = descendants(lifecycle.get().findViewById(android.R.id.content)).filterIsInstance<InkTestView>().single()
-            assertFalse(descendants(lifecycle.get().findViewById(android.R.id.content)).filterIsInstance<CheckBox>().single().isChecked)
-            assertFalse(restoredPaper.hoverPreparationEnabled)
             // visible() can already have completed Android's normal layout/draw passes.
             repeat(2) { restoredPaper.viewTreeObserver.dispatchOnPreDraw() }
             val currentVisible = Rect()

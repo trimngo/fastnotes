@@ -107,3 +107,13 @@ kernel, stored elsewhere or inaccessible to a normal app; missing files alone do
 not distinguish those cases. `driver-details.json` remains useful for matching a
 vendor/source request even if no module bytes can be exported. The official
 support-center/page sitemap search did not reveal a matching source download.
+
+
+## Experiment withdrawn after live-ink regression
+
+The user reports test8 shows only completed Android replay, regardless of the
+hover checkbox state. Test9 removes the hover experiment/input instrumentation
+and restores the exact test7 writing Activity/view/layout. These files did not
+change the service's Binder protocol, but layout and frame-presentation changes
+were not physically validated. No causal conclusion or latency win is drawn.
+The read-only driver collector remains available through explicit export.

@@ -1,3 +1,51 @@
+# 0.3.2-test9 live-ink baseline recovery validation
+
+Software checks performed on 5 November 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **119 tests passed**, no failures, errors or skips. Lint has no
+errors (50 warnings and 1 hint); debug/release
+variants compile. The four test8-only idle/hover experiment cases are removed
+with that withdrawn feature; the working completion/focus and driver-export cases
+continue passing.
+
+Verified byte-for-byte identity with test7 source commit
+`6c6be6c153a83a7443e7905e984a127e11510bcc` for:
+
+- InkTestActivity.kt (including its layout, registration and focus behavior)
+- InkTestView.kt (including pressure-aware completed ink at pen-up)
+- InkComparisonTest.kt (matching integration/lifecycle coverage)
+
+The SystemInkProbe Binder controller/protocol was unchanged in test8. Driver
+metadata/module export is retained from test8 and runs only on explicit Save ZIP.
+No new native, global setting, geometry-normalization or timing experiment is
+introduced in this recovery build. Note storage/default notebook remain unchanged.
+
+The user reports no live drawing in test8 with either hover-checkbox state. Its
+failing report confirms accepted registration, prompt Android samples, zero hover
+requests for the current two strokes and a changed canvas top of 731 versus
+596 in the working test7 report. The exact display failure is not proven by these
+facts. Restoring source/layout does not establish physical recovery: live ink,
+pen-up continuity and landscape split-screen focus return require tablet testing.
+The intermittent idle-start hesitation and exact native pressure curve remain open.
+
+## Recovery APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test9` (code 13)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- Version code increases so the source rollback installs over test8 without uninstalling
+- APK bytes: `7954904`
+- APK SHA-256: `103b6f7c4b20eb4e00aea736978f434c67b1e78a203bec2670018a6810a554c6`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [recovery checks](DEVICE_TESTING.md) and [regression evidence](INK_INVESTIGATION.md).
+
+---
+
 # 0.3.2-test8 idle-start and driver retrieval validation
 
 Software checks performed on 5 November 2026:

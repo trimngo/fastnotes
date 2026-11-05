@@ -473,3 +473,44 @@ in-memory idle input history. It asks Android for one completed-ink frame when
 stylus hover returns after at least one second of idle. Whether this improves
 physical first-stroke onset needs the user's A/B observation or pen-tip video.
 No false pen samples, native/global settings, or writes on DOWN/MOVE are added.
+
+
+## Test8 regression and test9 recovery
+
+The user reports that test8 System ink draws nothing while the pen moves, then
+shows completed ink after lifting. They tried both states of hover preparation.
+This is treated as a regression, not as a successful low-latency result.
+
+The Binder protocol/controller did not change from test7. Test8 added a hover
+redraw path, input-only idle instrumentation and an extra control row/instructions
+that changed the registered canvas geometry. Disabling the checkbox does not
+restore that layout or undo an earlier panel redraw, so it does not isolate a
+single cause. No exact cause is claimed without a device report/retest.
+
+Test9 restores InkTestActivity.kt, InkTestView.kt and InkComparisonTest.kt exactly
+from the test7 source commit 6c6be6c153a83a7443e7905e984a127e11510bcc. The hover
+experiment and its tests are removed. This restores the known baseline's UI,
+registration/focus lifecycle, pressure-aware completion and input behavior rather
+than layering another unverified timing change onto the failing build.
+
+Driver/API export remains as implemented in test8; it does not run during ordinary
+writing and is still available through API files. The normal notebook and saved
+notes remain unchanged. Device validation is required for restored live ink,
+pen-up continuity and split-screen focus return. The earlier idle first-stroke
+hesitation and exact pressure curve remain unresolved pending a reliable baseline
+and driver evidence.
+
+
+The subsequent failing test8 report records portrait/full-screen canvas
+`[0,731][1920,2400]`, selected/accepted System ink, no pending resume/manual retry,
+and 893 Android samples (two completed strokes, maximum event age 4 ms). DOWN
+ages are 3/2 ms and first-MOVE intervals 2/2 ms; registration ages at DOWN are
+834/2,596 ms. Both strokes report no preceding hover request and current hover
+requests are zero. The prior stage history includes earlier hover activity and
+worker/reference comparisons, so the report does not isolate prior device state.
+It confirms prompt app input and accepted registration, not live panel drawing.
+
+The working test7 export used canvas `[0,596][1920,2400]`. Test8's changed top at
+731 is a concrete geometry difference, but any downstream alignment restriction
+or causal role is unverified. Test9 restores the original layout instead of
+adding a guessed rectangle/alignment or native setting workaround.

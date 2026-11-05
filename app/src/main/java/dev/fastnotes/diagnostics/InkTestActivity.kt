@@ -15,7 +15,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -42,7 +41,6 @@ class InkTestActivity : Activity() {
     private var systemSelected = false
     private var systemResumePending = false
     private var systemStartFailed = false
-    private var hoverPreparationEnabled = true
     private var oldRun = ""
     private var apiReport = ""
     private var modeLabel = "Android pen"
@@ -65,7 +63,6 @@ class InkTestActivity : Activity() {
         systemSelected = state?.getBoolean("systemSelected") ?: false
         systemStartFailed = state?.getBoolean("systemStartFailed") ?: false
         systemResumePending = systemSelected && !systemStartFailed
-        hoverPreparationEnabled = state?.getBoolean("hoverPreparationEnabled", true) ?: true
         oldRun = InkProbeLog.read(this)
         val app = application as FastnotesApp
         log = app.inkProbeLog
@@ -106,18 +103,9 @@ class InkTestActivity : Activity() {
             if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
         }, "System ink" to { startSystemTest() }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) },
             "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
-        root.addView(CheckBox(this).apply {
-            text = "System ink: prepare after idle on hover"; textSize = 13f; setTextColor(Color.BLACK)
-            setPadding(dp(12), 0, dp(12), 0); maxLines = 2
-            isChecked = hoverPreparationEnabled
-            setOnCheckedChangeListener { _, checked ->
-                hoverPreparationEnabled = checked
-                if (::paper.isInitialized) paper.hoverPreparationEnabled = checked
-            }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. System ink provides live writing and pressure-aware completion. Compare the first stroke after a pause with hover preparation on and off, then Copy report. This requests a frame when the pen returns; it does not change the native engine."
+            text = "Temporary scratchpad. System ink provides live writing; the app redraws completed strokes at pen-up with pressure variation. Watch the pen-up transition, then Copy report. Worker and Reference modes keep their earlier one-second delay."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -137,10 +125,7 @@ class InkTestActivity : Activity() {
             }
         }
         root.addView(observations)
-        paper = InkTestView(this).apply {
-            hoverPreparationEnabled = this@InkTestActivity.hoverPreparationEnabled
-            onStrokeFinished = { status.text = stats() }
-        }
+        paper = InkTestView(this).apply { onStrokeFinished = { status.text = stats() } }
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         status = TextView(this).apply {
             text = "Android pen: write a rapid continuous up/down stroke."
@@ -199,7 +184,6 @@ class InkTestActivity : Activity() {
         systemResumePending = false
         if (systemProbe.start(current.visible)) {
             registeredGeometry = current
-            paper.setSystemRegistration(true)
             modeLabel = "System ink"
             status.text = "System ink requested. Look for complete ink while moving, then record the result."
         } else {
@@ -297,7 +281,7 @@ class InkTestActivity : Activity() {
 
     private fun stats() = "$modeLabel: ${paper.samples} Android samples; max event age ${paper.maxEventAgeMs} ms. " +
         (if (nativeProbe.active) "Native accepted=${nativeProbe.samples}. " else "") +
-        (if (modeLabel == "System ink") "Completed=${paper.completedStrokes}; pressure: ${paper.pressureSummary}; hover frames=${paper.hoverPreparationRequests}. " else "") +
+        (if (modeLabel == "System ink") "Completed=${paper.completedStrokes}; pressure: ${paper.pressureSummary}. " else "") +
         "Timing excludes visible panel latency."
 
     private fun report(): String = buildString {
@@ -311,8 +295,6 @@ class InkTestActivity : Activity() {
         append("System ink: ${systemProbe.status}\n")
         append("System selection: $systemSelected; waiting to resume: $systemResumePending; manual retry required: $systemStartFailed\n")
         append("Scratch handoff: ${paper.handoffDescription}\n")
-        append("Hover preparation enabled: $hoverPreparationEnabled\n")
-        append("Idle start diagnostics:\n${paper.idleStartSummary}\n")
         append("User observed ink while moving: $observed\n")
         append(stats()).append('\n')
         append("Native buffer details (last request):\n").append(nativeProbe.details()).append('\n')
@@ -349,7 +331,6 @@ class InkTestActivity : Activity() {
     override fun onSaveInstanceState(state: Bundle) {
         state.putBoolean("systemSelected", systemSelected)
         state.putBoolean("systemStartFailed", systemStartFailed)
-        state.putBoolean("hoverPreparationEnabled", hoverPreparationEnabled)
         super.onSaveInstanceState(state)
     }
     override fun onDestroy() {
