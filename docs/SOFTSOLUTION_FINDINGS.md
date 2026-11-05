@@ -7,6 +7,14 @@ an APK difference from shared firmware/runtime state. The earlier USB collector
 also omitted the selected backend's `SoftSolutionBufTransfer` log tag; its zero
 native-error count did not cover surface initialization/queue failures.
 
+The original test6 has now been retested and also shows no live ink. The report
+confirms matching canvas geometry, accepted registration and 413 Android samples
+at maximum age 4 ms. Its current process requested no native bitmap comparison;
+those entries belong to previous-run history. The earlier live result remains
+unreproduced, without an established cause. Use the corrected surface capture
+on test6, including the transition into built-in Notes, before further app
+timing or global-state changes.
+
 **Test11 correction:** the test10 System ink block was unjustified by the
 captured no-op methods. Scoped registration also initializes WritingSurface via
 WritingProducer. The user reports Worker refresh still skips and asks to return

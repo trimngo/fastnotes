@@ -1,5 +1,14 @@
 # Test11 negative device result and original-APK audit
 
+The user has now tested the original test6 and reports no live ink. The pasted
+report verifies test6, portrait canvas `[0,596][1920,2400]`, accepted registration,
+413 current Android samples and maximum event age 4 ms. It explicitly says no
+native bitmap test was requested in this run; mixed Worker/Reference records are
+under Previous run. This is a negative physical baseline result, not a working
+rollback. Updated surface capture is next; its built-in Notes prompt now starts
+capture before the app switch so initialization is included. Only instructions
+and durable evidence changed; the Android APK/source remain unchanged.
+
 5 November 2026. The user reports test11 still shows completed ink only after
 lifting, without live System preview. The software checks below therefore do
 not establish a recovered physical baseline.

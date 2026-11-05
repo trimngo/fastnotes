@@ -6,6 +6,11 @@ Latest device result: test11 still has no live ink. Next is an
 [actual test6 APK comparison](docs/EXACT_TEST6_COMPARISON.md) and filtered
 SoftSolution surface logs, rather than another unverified timing change.
 
+The actual test6 comparison is now complete and also produced no live ink, with
+matching geometry, accepted registration and prompt Android input. Next is the
+updated USB surface capture while test6 remains installed; no repeat downgrade
+or new handwriting APK is requested from this report alone.
+
 ### Preferred System ink restoration (0.3.2-test11)
 
 - User reports test10's Worker refresh still skips and prefers test6's live

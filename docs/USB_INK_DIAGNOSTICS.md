@@ -7,6 +7,11 @@ marker, selected SoftSolution surface states/errors, and Binder producer owner/
 client PIDs during Fastnotes and built-in Notes. It also collects readable
 kernel/driver identity. It does not change the app or firmware.
 
+The original test6 APK has now also produced no live ink with accepted scoped
+registration and prompt Android input. Test6 can remain installed for this
+capture; no reinstall or new handwriting APK is required. Before starting, have
+an empty page ready in built-in Notes, then return to Fastnotes Ink Test.
+
 The first collector omitted the `SoftSolutionBufTransfer` tag, so its zero native
 error count did not cover the selected backend's surface failures. Download the
 updated script again before repeating a capture. To compare the actual earlier
@@ -34,8 +39,10 @@ APK rather than a source approximation, use [the test6 comparison](EXACT_TEST6_C
 4. Follow the terminal's two prompts. First open the separate **Fastnotes Ink
    Test** icon. Press Enter in the terminal, then tap **System ink** (again if
    already selected) and draw fast loops/up-down strokes for 15 seconds. This
-   order also captures region-registration errors. Next open a blank built-in Notes
-   page, press Enter and draw the same pattern for its 15-second comparison.
+   order also captures region-registration errors. At the second prompt, press
+   Enter **before switching to built-in Notes**, then open its prepared empty
+   page and draw the same pattern for the remaining 15-second comparison.
+   This includes the app handoff and initial surface connection in the capture.
    Keep both tests full-screen in portrait initially. Note whether ink was visible
    during motion or appeared only after lifting.
 5. Attach `fastnotes-surface-evidence.tar.gz` to the conversation and report the two

@@ -2,9 +2,10 @@
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
 keeps notes offline. **0.3.2-test11 restores the earlier System ink option.**
-The user reports test11 still has no live System preview, only pen-up completion.
-An [actual archived test6 comparison](docs/EXACT_TEST6_COMPARISON.md) and corrected
-USB surface logging are the next diagnostic steps; live recovery is not claimed.
+The user reports both test11 and the actual original test6 still have no live
+System preview. The [original-APK result](docs/EXACT_TEST6_COMPARISON.md) confirms
+accepted registration and prompt input; [updated USB surface logging](docs/USB_INK_DIAGNOSTICS.md)
+is the next diagnostic step. Live recovery is not claimed.
 The user preferred test6's live writing, despite ink disappearing after pen-up;
 test10's Worker refresh still skips. Blocking System ink from the SoftSolution
 property was too strong a conclusion: scoped registration also initializes the

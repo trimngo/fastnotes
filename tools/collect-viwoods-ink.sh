@@ -286,7 +286,7 @@ phase() {
 }
 
 phase fastnotes_system_ink 'Open Fastnotes Ink Test. After pressing Enter here, tap System ink (again if already selected), then draw.'
-phase built_in_notes 'Open the built-in Viwoods Notes app and prepare an empty writing area.'
+phase built_in_notes 'After pressing Enter here, open the built-in Viwoods Notes app on an empty writing area, then draw.'
 
 # No overwrite: create the destination exclusively before packaging the small report.
 (set -C; : > "$output") 2>/dev/null || { echo 'The output path now exists; choose another path.' >&2; exit 1; }

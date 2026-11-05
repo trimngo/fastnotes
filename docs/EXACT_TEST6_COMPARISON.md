@@ -1,5 +1,16 @@
 # Compare the original test6 APK
 
+**Result, 5 November 2026:** the user installed the original test6 and reports
+that it also has no live ink. Its report confirms the earlier portrait canvas
+`[0,596][1920,2400]`, accepted System registration, and 413 current Android samples
+with maximum event age 4 ms. No native bitmap test was requested in this run;
+Worker/Reference entries are explicitly previous-run history. This does not
+identify a changed global firmware setting or a current bitmap-controller
+conflict. Source rollback alone has not reproduced the earlier live behavior.
+Next use the [updated USB surface capture](USB_INK_DIAGNOSTICS.md); test6 can stay
+installed for that diagnostic. The original comparison steps remain below for
+reference, not as a request to repeat the completed downgrade.
+
 The user reports test11 still has no live System ink: completed strokes appear
 only after UP. Test11 therefore did not restore the earlier live result. The
 next comparison uses the actual archived test6 APK, rather than another partial

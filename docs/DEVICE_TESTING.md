@@ -99,7 +99,16 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: actual test6 APK comparison
+## Current step: updated USB surface capture
+
+The original test6 also fails to show live ink. Its report confirms accepted
+registration, the earlier canvas geometry and prompt input. Keep test6 installed
+and run the [updated surface capture](USB_INK_DIAGNOSTICS.md). At each prompt,
+start capture before selecting System ink or switching into built-in Notes, so
+initialization and ownership handoff are included. The source rollback result
+does not by itself establish which external state or drawing contract is missing.
+
+## Completed step: actual test6 APK comparison
 
 Test11 still shows only pen-up completion according to the user. Use the
 [exact test6 comparison](EXACT_TEST6_COMPARISON.md) through the existing Mac/Linux
