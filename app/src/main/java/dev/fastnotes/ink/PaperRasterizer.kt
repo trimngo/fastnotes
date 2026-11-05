@@ -20,6 +20,11 @@ class PaperRasterizer {
     private val ruling = Paint().apply { color = Color.rgb(180, 180, 180); strokeWidth = 1f }
 
     fun page(canvas: Canvas, note: Note, view: Viewport, excluded: Set<Long> = emptySet()) {
+        paper(canvas, note, view)
+        ink(canvas, note, view, excluded)
+    }
+
+    fun paper(canvas: Canvas, note: Note, view: Viewport) {
         canvas.drawColor(Color.WHITE)
         val first = floor(view.scrollY / note.lineSpacing).toInt()
         val last = ceil((view.scrollY + view.visibleHeight) / note.lineSpacing).toInt()
@@ -29,6 +34,10 @@ class PaperRasterizer {
         }
         val margin = note.pageWidth * 0.055f * view.scale
         canvas.drawLine(margin, 0f, margin, view.height.toFloat(), ruling)
+    }
+
+    /** Draw ink over the caller's existing surface; transparent layers must be cleared first. */
+    fun ink(canvas: Canvas, note: Note, view: Viewport, excluded: Set<Long> = emptySet()) {
         for (stroke in note.strokes) {
             if (stroke.id !in excluded && stroke.bottom + stroke.width >= view.scrollY &&
                 stroke.top - stroke.width <= view.scrollY + view.visibleHeight) {

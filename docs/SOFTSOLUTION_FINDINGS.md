@@ -1,5 +1,12 @@
 # SoftSolution backend and bitmap registration correction
 
+**Current comparison:** the updated USB archive is usable despite existing Notes
+handwriting; new strokes were drawn. It shows System input/setup attempts but
+does not establish the missing-pixel cause. A separate cross-ABI compositor
+review found reserved FE/FD colours that opaque antialiasing can generate; real
+raster tests reproduce this. Test12 adds an isolated transparent **Ink layers**
+pen comparison, with the same worker timing. See [pixel findings](INK_LAYERS_FINDINGS.md).
+
 **Latest device result:** the user reports test11 still shows only completed ink
 after lifting, with no live System preview. It is not a recovered baseline. An
 [actual test6 APK comparison](EXACT_TEST6_COMPARISON.md) is prepared to distinguish

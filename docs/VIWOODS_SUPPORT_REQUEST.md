@@ -47,3 +47,17 @@ Source and independent findings: https://github.com/trimngo/fastnotes
 See docs/SOFTSOLUTION_FINDINGS.md for evidence and limits. No notes, raw pen
 coordinates, OEM binaries or device serials are needed in the initial request.
 This draft remains **unsent**.
+
+## Pixel-contract follow-up
+
+Exact native compositor inspection shows opaque FE/FD grey values have reserved
+mask/command semantics. A real Fastnotes opaque AA raster with integer endpoints
+and a 3-pixel pen produces those values; transparent black AA avoids them in the
+same software fixture. Test12 adds an isolated transparent ink comparison while
+retaining the same worker scheduling. Physical benefit is not yet established.
+Please clarify the supported foreground/background pixel and alpha contract,
+including ImageProcessor.transformImage and writeLine02 transformations used by
+Notes, so ordinary antialiasing cannot accidentally issue erase commands. The
+latest USB capture shows 928 System policy callbacks and an init attempt without
+filtered surface errors; its Notes phase included new strokes on an existing
+page. No raw pen/page data or OEM code is attached. This remains **unsent**.

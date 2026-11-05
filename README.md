@@ -1,7 +1,16 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test11 restores the earlier System ink option.**
+keeps notes offline. **0.3.2-test12 adds the Ink layers native comparison.**
+The selected compositor reserves near-white FE/FD pixel values as drawing
+commands; Fastnotes' opaque antialiasing naturally produces them in a software
+test. The new explicit mode uses transparent native ink layers with the same
+worker scheduling, avoiding those reserved colours in the tested raster.
+Use **Fastnotes Ink Test → Ink layers** with the pen tip, judge ink while moving,
+and compare Worker refresh. Physical improvement is unverified; notebook defaults
+are unchanged. See [pixel-contract findings](docs/INK_LAYERS_FINDINGS.md).
+
+Test11 restored the earlier System ink option.
 The user reports both test11 and the actual original test6 still have no live
 System preview. The [original-APK result](docs/EXACT_TEST6_COMPARISON.md) confirms
 accepted registration and prompt input; [updated USB surface logging](docs/USB_INK_DIAGNOSTICS.md)

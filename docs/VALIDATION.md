@@ -1,3 +1,38 @@
+# 0.3.2-test12 Ink layers comparison validation
+
+5 November 2026. Full verification succeeded:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+**131 tests passed**, no failures, errors or skips. Lint has no errors (51 warnings
+and 1 hint); debug/release compile. Independent review found no blocking layer
+ownership, clearing, lock-order, clipping or default-renderer change.
+
+The real PaperRasterizer fixture with integer endpoints and 3-pixel width
+generated **9 opaque FE and 12 opaque FD pixels**, without injecting a sentinel.
+Its transparent black counterpart generated zero reserved pixels. A model of the
+external native rule verifies that the opaque sentinel can suppress an ordinary
+black foreground pixel across an updated rectangle. Tests also verify distinct
+transparent layers, completed-background stability, SRC cancellation clearing,
+existing stroke rebuilding, and paper/ink capture only after the quiet interval.
+Existing enum-loop geometry checks include the new comparison mode.
+
+Ink layers uses the same worker scheduling as the opaque control and remains an
+explicit scratch comparison. The normal notebook defaults are unchanged. Actual
+device gaps/latency, live eraser behavior and the full stock ImageProcessor
+contract remain unverified. See [findings and capture interpretation](INK_LAYERS_FINDINGS.md).
+
+APK identity:
+
+- `dev.fastnotes`, version `0.3.2-test12`, code 16; minimum API 29, target API 30
+- Bytes: `7971292`
+- SHA-256: `0cd7e8a4b92d6ae3f2b34c54b553a30a2710e50e214a018e05201f93b7323a18`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Same note format and package; installs over test6 or later without uninstalling
+
 # Test11 negative device result and original-APK audit
 
 The user has now tested the original test6 and reports no live ink. The pasted

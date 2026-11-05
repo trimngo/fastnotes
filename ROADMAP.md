@@ -2,6 +2,11 @@
 
 Current native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
 
+Test12 adds an isolated [Ink layers comparison](docs/INK_LAYERS_FINDINGS.md).
+The actual native compositor treats opaque near-white FE/FD pixels as commands;
+real antialiasing produces them. Transparent black ink avoids them in the
+software fixture. Validate live pen output before notebook/eraser integration.
+
 Latest device result: test11 still has no live ink. Next is an
 [actual test6 APK comparison](docs/EXACT_TEST6_COMPARISON.md) and filtered
 SoftSolution surface logs, rather than another unverified timing change.

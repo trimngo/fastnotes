@@ -103,11 +103,11 @@ class InkTestActivity : Activity() {
         row("Android pen" to {
             if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
         }, "System ink" to { startSystemTest() }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) },
-            "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
+            "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) },
+            "Ink layers" to { startNativeTest(NativeBufferMode.INK_LAYERS) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            // Test6 wording/layout, with only the completed-ink timing corrected.
-            text = "Temporary scratchpad. Try System ink with fast pen strokes. It requests the firmware’s own ink inside this area. App ink stays visible after pen-up. Record what you saw while writing, then Copy report. Other modes retain the earlier comparisons."
+            text = "Temporary scratchpad. Compare Ink layers with Worker refresh using fast pen strokes. Watch ink while moving; both show an Android snapshot one second after pen-up. Use the pen tip for the new comparison. System ink remains a separate firmware request."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {

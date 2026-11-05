@@ -99,7 +99,31 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: updated USB surface capture
+## Current step: Ink layers comparison (0.3.2-test12)
+
+The new surface capture is usable: the user drew new strokes on an existing
+Notes page. Fastnotes produced 928 system-policy callbacks and an init attempt;
+no filtered queue errors establish a cause. Separate static inspection found
+reserved native FE/FD colours, and real integer-coordinate raster tests reproduce
+them on opaque white while transparent black avoids them. See
+[the findings and limits](INK_LAYERS_FINDINGS.md).
+
+1. Update through **Ink Test → Updates → Check now**, including from test6.
+2. Open **Fastnotes Ink Test → Ink layers**. Use the pen tip and draw rapid
+   continuous strokes in portrait. Judge only ink visible **while moving**.
+3. Lift and wait. This mode deliberately retains the one-second quiet Android
+   snapshot, so completed ink alone does not demonstrate native live drawing.
+4. Compare **Worker refresh** under the same conditions. Select the observed
+   result and **Copy report**. The report identifies the transparent pixel mode.
+5. If live continuity improves, then check landscape placement and clipping.
+   Reselect Ink layers after a native comparison stops on rotation/focus change.
+   Notebook/eraser integration requires separate validation after this pen test.
+
+No extra USB capture is required just because the Notes page was nonempty. The
+new mode is isolated from notebook defaults and introduces no firmware setting
+or refresh-timing change.
+
+## Completed step: updated USB surface capture
 
 The original test6 also fails to show live ink. Its report confirms accepted
 registration, the earlier canvas geometry and prompt input. Keep test6 installed

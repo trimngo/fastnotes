@@ -13,7 +13,7 @@ import dev.fastnotes.model.Note
 import dev.fastnotes.model.Viewport
 
 enum class NativeBufferMode(val label: String) {
-    PANE("Native pane"), DISPLAY("Worker refresh"), REFERENCE_CALLBACK("Reference callback")
+    PANE("Native pane"), DISPLAY("Worker refresh"), REFERENCE_CALLBACK("Reference callback"), INK_LAYERS("Ink layers")
 }
 
 /** Temporary geometry/execution comparisons; live performance requires a user observation. */
@@ -62,7 +62,10 @@ class NativeBufferProbe internal constructor(
             val note = Note(pageWidth = width.toFloat(), penWidth = 3f,
                 lineSpacing = 48f * context.resources.displayMetrics.density,
                 scrollY = (bufferBounds.top - canvas.top).toFloat())
-            PaperRasterizer().page(Canvas(source), note, Viewport(note.pageWidth, width, height, note.scrollY))
+            val raster = PaperRasterizer()
+            val viewport = Viewport(note.pageWidth, width, height, note.scrollY)
+            if (mode == NativeBufferMode.INK_LAYERS) raster.ink(Canvas(source), note, viewport)
+            else raster.page(Canvas(source), note, viewport)
             val engine = panelFactory(mode)
             panel = engine
             engine.onEditsAvailable = {
@@ -87,7 +90,8 @@ class NativeBufferProbe internal constructor(
             }
             val clip = Rect(visible).apply { offset(-bufferBounds.left, -bufferBounds.top) }
             checkpoint("${mode.label}: calling native controller start")
-            check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation, visible = clip))
+            check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation,
+                visible = clip, inkLayers = mode == NativeBufferMode.INK_LAYERS))
             status = "${mode.label} requested. Live ink is unverified."
             checkpoint("${mode.label}: native controller returned; active=${engine.active}; mode=${engine.lastActiveMode}")
             true
@@ -116,6 +120,7 @@ class NativeBufferProbe internal constructor(
         append("active=${engine.active}; pen down=${engine.penDown}; native callbacks=${engine.rawEventCount}; accepted=${engine.sampleCount}; refreshes=${engine.renderCount}\n")
         append("Picture mode=${engine.lastActiveMode}; longest refresh call=${engine.maxRenderMicros} us; last call=${engine.failureStage}\n")
         append("Policy=${engine.refreshPolicy}; callback thread=${engine.lastCallbackThread}; render thread=${engine.lastRenderThread}; stroke-end thread=${engine.lastEndThread}\n")
+        append("Bitmap=${engine.bitmapDescription}\n")
         append("${engine.status}. Call timing excludes visible panel latency.")
     } } ?: lastDetails
 

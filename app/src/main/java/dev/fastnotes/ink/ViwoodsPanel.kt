@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BlendMode
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Color
+import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -50,6 +52,8 @@ class ViwoodsPanel internal constructor(
     private var backgroundFrame: Bitmap? = null
     private var backgroundCanvas: Canvas? = null
     private val backgroundCopy = Paint().apply { blendMode = BlendMode.SRC }
+    private var inkLayers = false
+    val bitmapDescription get() = if (inkLayers) "Transparent native ink layers" else "Opaque paper bitmap"
     private val raster = PaperRasterizer()
     private var page = Note()
     private var view = Viewport(1000f, 1, 1, 0f)
@@ -124,7 +128,7 @@ class ViwoodsPanel internal constructor(
     fun available() = availabilityReport() == "Available"
 
     fun start(context: Context, source: Bitmap, note: Note, x: Int, y: Int,
-              orientation: Int, erase: Boolean = false, visible: Rect? = null): Boolean {
+              orientation: Int, erase: Boolean = false, visible: Rect? = null, inkLayers: Boolean = false): Boolean {
         stop()
         val report = availabilityReport()
         if (report != "Available") { status = report; return false }
@@ -134,16 +138,18 @@ class ViwoodsPanel internal constructor(
             methods = type.methods.toList()
             instance = type.getMethod("getInstance").invoke(null)
             synchronized(lock) {
+                this.inkLayers = inkLayers
                 frame = source.copy(Bitmap.Config.ARGB_8888, true)
                 canvas = Canvas(frame!!)
-                displayFrame = source.copy(Bitmap.Config.ARGB_8888, true)
+                page = note
+                view = Viewport(note.pageWidth, source.width, source.height, note.scrollY)
+                if (inkLayers) redrawPage()
+                displayFrame = frame!!.copy(Bitmap.Config.ARGB_8888, true)
                 displayCanvas = Canvas(displayFrame!!)
                 // ENote deduplicates registrations by bitmap identity as well as layer kind.
                 // Sharing this object with the foreground replaces that layer in SoftSolution.
-                backgroundFrame = source.copy(Bitmap.Config.ARGB_8888, true)
+                backgroundFrame = frame!!.copy(Bitmap.Config.ARGB_8888, true)
                 backgroundCanvas = Canvas(backgroundFrame!!)
-                page = note
-                view = Viewport(note.pageWidth, source.width, source.height, note.scrollY)
                 screenBounds = Rect(x, y, x + source.width, y + source.height)
                 visibleLocal = visible?.let(::Rect) ?: Rect(0, 0, source.width, source.height)
                 check(visibleLocal.intersect(0, 0, source.width, source.height)) { "Empty editor visibility" }
@@ -275,7 +281,7 @@ class ViwoodsPanel internal constructor(
                 }
             }
             if (dirty != null) {
-                raster.page(canvas!!, page, view, erased)
+                redrawPage(erased)
                 queueRender(dirty)
             }
         } else {
@@ -296,7 +302,7 @@ class ViwoodsPanel internal constructor(
             strokeDamage.union(clipped)
             // Follow the inspected SDK's callback topology: paint, present and later end the
             // transaction on this callback thread, without an extra writing-enable transition.
-            displayCanvas!!.drawBitmap(frame!!, clipped, clipped, null)
+            displayCanvas!!.drawBitmap(frame!!, clipped, clipped, if (inkLayers) backgroundCopy else null)
             val screen = Rect(clipped).apply { offset(screenBounds.left, screenBounds.top) }
             val started = System.nanoTime()
             lastRenderThread = Thread.currentThread().id
@@ -348,7 +354,7 @@ class ViwoodsPanel internal constructor(
             recentDamage.addLast(Damage(now, changed))
             // ENote reads a distinct presentation bitmap. Input can continue drawing the preview
             // while renderWriting is busy; neither a live Canvas nor a mutable Rect is shared.
-            displayCanvas!!.drawBitmap(frame!!, covered, covered, null)
+            displayCanvas!!.drawBitmap(frame!!, covered, covered, if (inkLayers) backgroundCopy else null)
             screen = Rect(covered).apply { offset(screenBounds.left, screenBounds.top) }
             nextRefreshAt = now + FRAME_MS
             refreshInFlight = true
@@ -385,7 +391,7 @@ class ViwoodsPanel internal constructor(
         if (!penDown) return
         penDown = false
         if (cancel) {
-            raster.page(canvas!!, page, view)
+            redrawPage()
             queueRender(Rect(0, 0, view.width, view.height))
         } else if (strokeIsEraser && erased.isNotEmpty()) {
             val ids = erased.toSet()
@@ -450,6 +456,14 @@ class ViwoodsPanel internal constructor(
         call("setWritingJavaBackgroundBitmap", backgroundFrame, orientation, screenBounds.left, screenBounds.top)
     }
 
+    /** Only the isolated ink-layer comparison separates Android paper from native ink. */
+    private fun redrawPage(excluded: Set<Long> = emptySet()) {
+        if (inkLayers) {
+            canvas!!.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            raster.ink(canvas!!, page, view, excluded)
+        } else raster.page(canvas!!, page, view, excluded)
+    }
+
     fun finish(cancel: Boolean) = synchronized(lock) { if (penDown) finishLocked(cancel) }
 
     fun drawPreview(target: Canvas, quietMs: Long = 0): Boolean = synchronized(lock) {
@@ -458,6 +472,7 @@ class ViwoodsPanel internal constructor(
         // Normal notebook drawing keeps its existing immediate behavior (quietMs = 0).
         if (quietMs > 0 && (penDown || SystemClock.uptimeMillis() - lastInkTime < quietMs)) return false
         val image = frame ?: return false
+        if (inkLayers) raster.paper(target, page, view)
         target.drawBitmap(image, 0f, 0f, null)
         true
     }
