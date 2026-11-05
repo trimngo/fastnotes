@@ -117,3 +117,20 @@ and restores the exact test7 writing Activity/view/layout. These files did not
 change the service's Binder protocol, but layout and frame-presentation changes
 were not physically validated. No causal conclusion or latency win is drawn.
 The read-only driver collector remains available through explicit export.
+
+## Third export and continued failure
+
+The third export's four code artifacts are the same two libpaintworker ABIs and
+framework/services DEX units. No kernel driver was captured. Driver metadata
+reports `mt8788`, but kernelVersion is null, metadataBytes is zero and modules,
+moduleFiles and indexMatches are empty. Failed reads/stat record exception types
+only, so absence cannot be distinguished from access denial. A future collector
+can use public Os.uname() and wrapped numeric errno for better identity/errors;
+these APIs cannot retrieve a pressure curve by themselves.
+
+The user reports no live System ink even after a tablet restart. Completed
+pen-up replay remains functional. Test9's source rollback is not a confirmed
+recovery. The next observation is the existing system-server policy callback
+marker during System ink versus stock Notes, using the
+[read-only USB diagnostic](USB_INK_DIAGNOSTICS.md). No new firmware enable,
+global tool/exclusion reset or pressure formula is introduced without evidence.

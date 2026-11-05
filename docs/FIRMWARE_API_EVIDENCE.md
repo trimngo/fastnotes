@@ -91,3 +91,9 @@ No OEM library is loaded into the app or executed by the investigation tools.
 Test9 restores test7's writing screen after a reported live-ink regression in the
 test8 hover experiment. This driver/API exporter is retained unchanged and runs
 only when Save ZIP is selected.
+
+The third export captured the userspace libraries/DEX again, but no kernel
+driver/module. Its hardware field is `mt8788`; kernel/device identity reads
+failed without numeric error codes. Another unchanged app export cannot be
+assumed to gain additional access. With live System ink still failing after a
+restart, the next step is a [read-only USB comparison](USB_INK_DIAGNOSTICS.md).

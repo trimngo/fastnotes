@@ -221,6 +221,12 @@ The order among the later ideas is undecided. The first priority remains
 
 ### Live-ink recovery (0.3.2-test9)
 
+- Follow-up: the user reports no live System ink even after restarting the
+  tablet. Physical recovery is not established. Next: a read-only Mac/Linux
+  [USB callback comparison](docs/USB_INK_DIAGNOSTICS.md) with built-in Notes;
+  no speculative global enable/reset change. Latest test8 API export contains
+  userspace libraries/DEX but no driver module.
+
 - User reports test8 has no live System ink with either hover-checkbox state;
   only completed replay appears after lifting. Remove the experiment.
 - Restore exact test7 Activity/view/layout and integration tests; retain isolated

@@ -1,13 +1,15 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test9 restores the test7 System ink baseline**.
+keeps notes offline. **0.3.2-test9 restores the test7 System ink source/layout**.
 The user reports test8 lost live ink with hover preparation both on and off,
 showing ink only after pen-up. The writing Activity, view and matching integration
 tests are restored byte-for-byte from test7, including its layout, pressure-aware
-completion and focus recovery. Driver export from test8 is retained. Actual live
-ink recovery still requires device verification; the intermittent idle-start
-hesitation and exact pressure-curve matching remain unresolved.
+completion and focus recovery. Driver export from test8 is retained. The user
+reports System ink still shows only completed pen-up replay, including after a
+tablet restart. Live ink is unresolved; a source rollback did not establish
+physical recovery. The next investigation is a [read-only USB comparison](docs/USB_INK_DIAGNOSTICS.md)
+with built-in Notes, which the user reports draws smoothly.
 See [native pressure/latency findings](docs/NATIVE_INK_FINDINGS.md),
 [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
 [the investigation](docs/INK_INVESTIGATION.md).

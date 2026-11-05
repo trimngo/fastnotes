@@ -1,3 +1,18 @@
+# Read-only USB collector validation
+
+5 November 2026. Host-only fixture and Bash syntax checks passed for
+`tools/collect-viwoods-ink.sh`. The fixture verifies USB-only selection,
+callback/native-error counts, stale-tail removal, coordinate/pressure/serial/note
+sentinel exclusion, authorization failures, partial metadata status, existing
+output protection and prompt return without timer-induced waits. No attached
+tablet was used. See [USB instructions](USB_INK_DIAGNOSTICS.md).
+
+The user reports System ink still shows only pen-up completion, including after
+a tablet restart. This is not a successful live-ink result. Latest exported
+report is from test8; the collector also checks the installed version. No Android
+source or APK changes are part of this diagnostic-tool update; the software
+checks below do not establish physical recovery.
+
 # 0.3.2-test9 live-ink baseline recovery validation
 
 Software checks performed on 5 November 2026:

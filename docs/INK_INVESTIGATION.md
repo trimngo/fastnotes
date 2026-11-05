@@ -514,3 +514,35 @@ The working test7 export used canvas `[0,596][1920,2400]`. Test8's changed top a
 731 is a concrete geometry difference, but any downstream alignment restriction
 or causal role is unverified. Test9 restores the original layout instead of
 adding a guessed rectangle/alignment or native setting workaround.
+
+## Continued no-live-ink report and USB investigation (5 November 2026)
+
+Following the test9 release, the user reports System ink still draws nothing
+while the pen moves and shows completed ink after lifting. They also confirm a
+tablet restart does not restore live drawing. A new test9 report has not yet
+been collected; the latest ZIP was created by test8. Restoring test7's source is
+therefore not treated as a physical fix, and the hover/layout change is not an
+established root cause.
+
+The third API export contains both libpaintworker ABIs and framework/services
+DEX, but no kernel module. Its driver metadata identifies hardware `mt8788`,
+with no kernel version, no module/index matches and zero metadata bytes read.
+Only exception classes were recorded. Android can wrap both absent-file and
+access-denied errors as FileNotFoundException, so these records do not establish
+which occurred. Missing modules do not establish a built-in driver either.
+
+A second static review confirms the scoped add/remove protocol and the server's
+asynchronous callback/region setup. The app does not repaint its current System
+stroke during MOVE. Successful registration still does not show the server
+received pen input or the controller displayed it. No missing safe enable call
+has been established. Changes to global exclusions, tool state or driver ioctls
+would be guesses at this point.
+
+The exact service emits `HandWritePolicy: test_dirty onInput: finish` after
+forwarding each DOWN/MOVE/UP to its drawing policy, even with debug disabled.
+This supplies an existing read-only observation point. The user can connect a
+Mac/Linux computer; the [USB collector](USB_INK_DIAGNOSTICS.md) compares this
+marker during the failing System test and working built-in Notes. It keeps
+callback counts/timestamps and readable fixed driver metadata, not raw log lines
+or handwriting coordinates. A positive marker shows policy input, not completed
+native rendering; zero markers can also reflect restricted/suppressed logs.

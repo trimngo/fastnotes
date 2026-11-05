@@ -99,7 +99,16 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: restore live ink (0.3.2-test9)
+## Current step: read-only USB comparison
+
+The user reports live System ink still fails, including after a tablet restart,
+and can connect a Mac/Linux computer. Use the [USB collector guide](USB_INK_DIAGNOSTICS.md)
+to compare the firmware's existing policy callback during the failing System
+test and built-in Notes. No further APK or global-setting variation is prepared
+without evidence locating the failure. The latest app export is from test8 and
+contains no driver module; the USB metadata also records the installed version.
+
+## Source rollback attempted (0.3.2-test9)
 
 The user reports test8 shows ink only after pen-up, with hover preparation both
 on and off. This is a live-ink regression; the completed Android replay does not

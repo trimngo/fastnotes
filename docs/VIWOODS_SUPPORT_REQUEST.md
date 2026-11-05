@@ -106,3 +106,22 @@ hesitates after idle with focus unchanged. Built-in Notes starts immediately.
 The T1000 policy clears its temporary drawing state 800 ms after UP. What is the
 supported idle-to-writing readiness or hover preparation contract for third-party
 AutoDraw? No OEM binaries are attached to this public draft. It remains **unsent**.
+
+## Continued live-ink failure and driver identity (5 November 2026)
+
+The user now reports no live System ink, only completed Android replay after
+pen-up, including after a tablet restart. Restoring the earlier test7 writing
+source/layout in test9 did not establish recovery. The newest attached report
+is from test8 and does not independently verify the currently installed version.
+Built-in Notes previously drew smoothly under the same fast-stroke comparison.
+
+The explicit read-only driver export identifies hardware `mt8788`, but captures
+no matching module, kernel version or device-node identity from the ordinary app
+process. Exception types alone cannot distinguish missing files from access
+denial. Please provide the matching `/dev/t1000_spi` driver/controller source or
+supported interface contract for full-size AiPaper build 3.15.15, and a supported
+way to observe effective AutoDraw regions/input readiness. The inspected native
+pressure setter forwards raw pressure with a lower clamp; the pressure-to-width
+mapping remains downstream and unrecovered. The app is not attempting device
+ioctls or global-state resets. A read-only USB input-callback comparison is being
+prepared. This request remains **unsent**.
