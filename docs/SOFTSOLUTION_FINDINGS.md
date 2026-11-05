@@ -1,5 +1,12 @@
 # SoftSolution backend and bitmap registration correction
 
+**Latest device result:** the user reports test11 still shows only completed ink
+after lifting, with no live System preview. It is not a recovered baseline. An
+[actual test6 APK comparison](EXACT_TEST6_COMPARISON.md) is prepared to distinguish
+an APK difference from shared firmware/runtime state. The earlier USB collector
+also omitted the selected backend's `SoftSolutionBufTransfer` log tag; its zero
+native-error count did not cover surface initialization/queue failures.
+
 **Test11 correction:** the test10 System ink block was unjustified by the
 captured no-op methods. Scoped registration also initializes WritingSurface via
 WritingProducer. The user reports Worker refresh still skips and asks to return

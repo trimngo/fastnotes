@@ -99,7 +99,18 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: restore preferred System ink (0.3.2-test11)
+## Current step: actual test6 APK comparison
+
+Test11 still shows only pen-up completion according to the user. Use the
+[exact test6 comparison](EXACT_TEST6_COMPARISON.md) through the existing Mac/Linux
+USB connection. Both packages are debug builds with unchanged note storage, so
+an in-place debug downgrade can be attempted without uninstalling. Reinstall
+test11 afterward and compare under the same process-reset condition. The
+updated [USB collector](USB_INK_DIAGNOSTICS.md) also captures filtered errors
+from the selected surface backend. No new handwriting APK is claimed as a fix
+from this report alone.
+
+## Earlier restoration attempt (0.3.2-test11)
 
 The user reports Worker refresh still skips and prefers the earlier System ink
 live feel, despite its pen-up disappearance. Test10's backend block was based on

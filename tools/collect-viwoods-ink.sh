@@ -91,7 +91,9 @@ callback-summary.txt counts the exact existing HandWritePolicy marker emitted
 after the system policy's onInput for DOWN/MOVE/UP. A count is evidence that this
 callback ran, not evidence of visible ink or successful hardware drawing. Zero
 can also mean logging was unavailable or filtered. Native failure counts retain
-only fixed categories, not the raw messages or their values.
+only fixed categories and selected surface error codes, not raw messages or pen
+values. SoftSolutionBufTransfer messages include writing-surface init/exit,
+connected-to-CPU and reinitialization states, plus lock/dequeue/queue failures.
 The first parseable log entry is discarded because logcat -T 1 can include a
 previous tail entry. This can also discard one fresh entry; compare sustained
 drawing rather than interpreting a single count. Requested and elapsed capture
@@ -99,7 +101,46 @@ times and the host logcat exit status are recorded for incomplete captures.
 
 Metadata access via adb shell can differ from app access. Missing module files
 do not prove a built-in driver. No driver binary or pressure curve is collected.
+WritingProducer owner/client PID snapshots are taken before each phase prompt
+and after its capture. --pid/--clients query Binder metadata, not vendor dump
+options. Unavailable or permission-restricted queries are recorded explicitly.
 EOF
+
+# Android 13 dumpsys --pid uses Binder getDebugPid, not the service dump handler.
+# Keep only numeric results; unexpected output and error messages stay in memory.
+service_pid() {
+    local key=$1 service=$2 value query_status
+    value=$(bounded_adb shell dumpsys --pid "$service" 2>/dev/null | head -c 256)
+    query_status=$?
+    value=$(printf '%s' "$value" | tr -d '\r\n')
+    case "$value" in ''|*[!0-9]*) value=unavailable ;; esac
+    printf '%s=%s exit=%s\n' "$key" "$value" "$query_status"
+}
+
+producer_snapshot() {
+    local label=$1 stage=$2 clients query_status
+    {
+        printf '\nproducer_snapshot phase=%s stage=%s\n' "$label" "$stage"
+        service_pid writing_producer.pid WritingProducer
+        clients=$(bounded_adb shell dumpsys --clients WritingProducer 2>/dev/null | head -c 4096)
+        query_status=$?
+        clients=$(printf '%s\n' "$clients" | tr -d '\r' | awk '
+            /^Client PIDs: / {
+                sub(/^Client PIDs: /, "")
+                if ($0 !~ /^[0-9, ]*$/) exit
+                if ($0 == "") { print "none"; exit }
+                n=split($0, pids, /[, ]+/); out=""; count=0
+                for (i=1; i<=n; i++) if (pids[i] ~ /^[0-9]+$/) {
+                    if (++count > 32) { print out " limit_reached=true"; exit }
+                    out=out (out == "" ? "" : ",") pids[i]
+                }
+                if (out != "") print out
+                exit
+            }')
+        [ -n "$clients" ] || clients=unavailable
+        printf 'writing_producer.clients=%s exit=%s\n' "$clients" "$query_status"
+    } >> "$work/report/callback-summary.txt"
+}
 
 # All remote commands are fixed reads. Output is limited at the producer and host.
 # No full getprop, /proc dump, raw input stream, bugreport or unfiltered uevent.
@@ -152,6 +193,7 @@ printf '\nmetadata_collection_exit=%s\n' "$metadata_status" >> "$work/report/met
 if [ "$(wc -c < "$work/report/metadata.txt")" -ge 65536 ]; then
     printf 'host_metadata_limit_reached=true\n' >> "$work/report/metadata.txt"
 fi
+service_pid enote_service.pid ENoteSetting >> "$work/report/metadata.txt"
 
 cat > "$work/filter.awk" <<'AWK'
 function record(category) {
@@ -164,6 +206,13 @@ function record(category) {
     if (!(key in first)) first[key] = $1 " " $2
     last[key] = $1 " " $2
 }
+function surface_error(category, pattern, detail) {
+    if (match($0, pattern)) {
+        detail=substr($0, RSTART, RLENGTH)
+        sub(/^.*error:/, "", detail)
+        record(category " code=" detail)
+    }
+}
 {
     if ($1 !~ /^[0-9][0-9]-[0-9][0-9]$/ || $3 !~ /^[0-9]+$/) next
     if (!discarded_tail++) next
@@ -174,6 +223,23 @@ function record(category) {
         if (index($0, "ioctl T1000_CMD_SEND_MIPI_PEN_WIDTH failed")) record("native_pen_width_failure")
         if (index($0, "ioctl T1000_CMD_SET_MIPI_PRESSURE_LEVEL failed")) record("native_pressure_failure")
         if (index($0, "ioctl T1000_CMD_SEND_MIPI_HANDWRITING_RANGE_MULTI failed")) record("native_region_failure")
+    }
+    if ($6 == "SoftSolutionBufTransfer:") {
+        if (match($0, /WritingSurface::init#[0-9]+ mConnectedToCpu:[01]([[:space:]]|$)/)) {
+            detail=substr($0, RSTART, RLENGTH)
+            sub(/^.*mConnectedToCpu:/, "", detail); sub(/[[:space:]].*$/, "", detail)
+            record("soft_surface_init connected_to_cpu=" detail)
+        }
+        if (index($0, "WritingSurface # exit()")) record("soft_surface_exit")
+        if (match($0, /WritingSurface::sendBuffer#[0-9]+ sendBuffer isInit:[01], isShouldInit:[01]([[:space:]]|$)/)) {
+            detail=substr($0, RSTART, RLENGTH)
+            sub(/^.*isInit:/, "", detail); sub(/[[:space:]]*$/, "", detail)
+            split(detail, state, ", isShouldInit:")
+            record("soft_surface_send_state is_init=" state[1] " should_init=" state[2])
+        }
+        surface_error("soft_surface_lock_failure", "WritingSurface::[A-Za-z]+#[0-9]+ lock error:-?[0-9]+")
+        surface_error("soft_surface_dequeue_failure", "WritingSurface::[A-Za-z]+#[0-9]+ dequeueBuffer error:-?[0-9]+")
+        surface_error("soft_surface_queue_failure", "WritingSurface::[A-Za-z]+#[0-9]+ queueBuffer error:-?[0-9]+")
     }
 }
 END {
@@ -190,6 +256,7 @@ AWK
 phase() {
     label=$1
     instruction=$2
+    producer_snapshot "$label" before_prompt
     printf '\n%s\nPress Enter when ready; then draw continuously for %s seconds.\n' "$instruction" "$seconds"
     IFS= read -r answer || { echo 'Input closed; no comparison captured.' >&2; exit 1; }
     fifo="$work/log-pipe"
@@ -198,7 +265,7 @@ phase() {
     filter_pid=$!
     # -T 1 starts near the current log tail without clearing the tablet log.
     started=$(date +%s)
-    "$adb_bin" -d logcat -v threadtime -T 1 'HandWritePolicy:D' 'libpaintworker:D' '*:S' > "$fifo" 2>/dev/null &
+    "$adb_bin" -d logcat -v threadtime -T 1 'HandWritePolicy:D' 'libpaintworker:D' 'SoftSolutionBufTransfer:D' '*:S' > "$fifo" 2>/dev/null &
     active_pid=$!
     (sleep "$seconds"; kill "$active_pid" 2>/dev/null) >/dev/null 2>&1 &
     timer_pid=$!
@@ -214,6 +281,7 @@ phase() {
         printf '\nphase=%s requested_seconds=%s elapsed_seconds=%s host_logcat_exit=%s\n' "$label" "$seconds" "$elapsed" "$log_status"
         cat "$work/phase-summary"
     } >> "$work/report/callback-summary.txt"
+    producer_snapshot "$label" after_capture
     echo 'Capture finished.'
 }
 

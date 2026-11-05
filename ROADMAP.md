@@ -2,6 +2,10 @@
 
 Current native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
 
+Latest device result: test11 still has no live ink. Next is an
+[actual test6 APK comparison](docs/EXACT_TEST6_COMPARISON.md) and filtered
+SoftSolution surface logs, rather than another unverified timing change.
+
 ### Preferred System ink restoration (0.3.2-test11)
 
 - User reports test10's Worker refresh still skips and prefers test6's live

@@ -1,3 +1,22 @@
+# Test11 negative device result and original-APK audit
+
+5 November 2026. The user reports test11 still shows completed ink only after
+lifting, without live System preview. The software checks below therefore do
+not establish a recovered physical baseline.
+
+The original test6 APK hash/version/debuggability were checked; its critical
+compiled System methods match the source behavior, with no accidental Android
+moving preview found. Manifest/startup/scoped IPC and unchanged note-storage
+sources were compared against test11. An [in-place USB comparison](EXACT_TEST6_COMPARISON.md)
+is prepared, with no tablet installation performed by the build environment.
+
+The selected backend's `SoftSolutionBufTransfer` log tag was missing from the
+first collector. Updated host fixtures pass for surface-state/error filtering,
+numeric producer metadata, permission-failure handling, raw-data exclusion and
+existing collector behavior. Bash syntax and diff checks pass. No Android app
+source changed in this audit/collector update, so no new APK is published and
+the 127-test app result below is retained as software evidence only.
+
 # 0.3.2-test11 System ink restoration validation
 
 5 November 2026. Full verification completed successfully:
