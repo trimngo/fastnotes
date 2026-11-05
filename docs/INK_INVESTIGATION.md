@@ -453,3 +453,23 @@ forward pressure to another dependency, driver or T1000 firmware; exact recovery
 is not promised. Android/native pressure scaling and smoothing also affect an
 identical visual replay. Until that evidence arrives, the app brush remains an
 explicit estimate. User-provided binaries remain outside the public repository.
+
+
+## Native pressure boundary and first-stroke investigation (test8)
+
+5 November 2026. The second user export includes verified 64/32-bit libpaintworker.
+Static inspection of both ABIs shows raw pressure forwarded to the T1000 driver,
+with width limits sent separately. The actual curve is downstream, not recovered.
+The service's configured jump count 4 suppresses four movement candidates per
+forwarded report; DOWN/UP bypass this. The app's setter cannot tune the separate
+server worker. No change to the working native engine is justified as a proven
+latency improvement. [Detailed native evidence](NATIVE_INK_FINDINGS.md).
+
+The user reports liking the low latency, confirms test7 ink stays visible after
+lifting, and identifies occasional hesitation after idle without a focus change.
+Built-in Notes starts immediately after the same pause. Test8 preserves the
+working route and adds a reversible hover-preparation comparison plus bounded
+in-memory idle input history. It asks Android for one completed-ink frame when
+stylus hover returns after at least one second of idle. Whether this improves
+physical first-stroke onset needs the user's A/B observation or pen-tip video.
+No false pen samples, native/global settings, or writes on DOWN/MOVE are added.

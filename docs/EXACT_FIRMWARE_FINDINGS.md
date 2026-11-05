@@ -106,3 +106,14 @@ executing it. Check ELF dependencies and JNI pressure/width entry points before
 assuming the curve lives there: pressure may be delegated to another library,
 driver or controller firmware. Exact replay also requires matching pressure
 normalization, smoothing and geometry, not just one width formula.
+
+
+## Native library inspection completed
+
+The second export successfully included both libpaintworker ABIs, with verified
+hashes. Both forward raw pressure and width limits into `/dev/t1000_spi`; neither
+contains the actual pressure-to-width curve on this route. Native input filtering
+was recovered, but the working service exposes no scoped setter for it. The user
+confirms completed ink now stays visible and identifies a separate idle-start
+hesitation absent from built-in Notes. See [the native findings](NATIVE_INK_FINDINGS.md)
+for call-chain evidence, limits and the optional hover-frame comparison.

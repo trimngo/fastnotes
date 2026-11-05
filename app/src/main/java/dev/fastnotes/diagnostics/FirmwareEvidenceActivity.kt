@@ -34,8 +34,8 @@ class FirmwareEvidenceActivity : Activity() {
         }
         content.addView(Button(this).apply { text = "Back"; isAllCaps = false; setOnClickListener { finish() } })
         text("Firmware API files", 24f)
-        text("Save the tablet’s system handwriting API code and the ink diagnostic report as a ZIP for investigation.")
-        text("Only system framework/API files are collected. Saved sheets, scratch strokes and personal files are excluded. Nothing is uploaded automatically.")
+        text("Save system handwriting API code, driver details and the ink report as a ZIP for investigation.")
+        text("The export reads system API files, kernel/driver metadata and matching readable modules. Saved sheets, scratch strokes and personal files are excluded. Nothing is uploaded automatically.")
         text("Tap Save ZIP, choose Downloads in Android’s file picker, then Save. Attach that ZIP in the chat where you shared the ink reports.")
         status = text("Ready to prepare the API files.")
         save = Button(this).apply {
@@ -57,7 +57,7 @@ class FirmwareEvidenceActivity : Activity() {
             FirmwareEvidenceState.Preparing -> "Reading system API files…"
             is FirmwareEvidenceState.Ready -> if (state.summary.inventoryOnly)
                 "API code was not readable. The ZIP contains the diagnostic report and system-file inventory."
-                else "Prepared ${state.summary.codeFiles} API code files. Choose where to save the ZIP."
+                else "Prepared ${state.summary.codeFiles} system code files. Choose where to save the ZIP."
             FirmwareEvidenceState.Saving -> "Saving ZIP…"
             is FirmwareEvidenceState.Saved -> "ZIP saved. Attach fastnotes-api-evidence.zip in the chat." +
                 if (state.summary.inventoryOnly) " API code was unavailable; the inventory explains what was readable." else ""

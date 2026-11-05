@@ -195,6 +195,42 @@ class FirmwareEvidenceTest {
         assertEquals(0, third.consumed)
     }
 
+    @Test fun readableDriverModuleIsPrioritizedAndInventoryIsSavedWithoutOutsideFiles() {
+        val system = root()
+        val moduleBytes = byteArrayOf(127, 69, 76, 70, 1, 2, 3, 4)
+        val module = File(system, "t1000_spi.ko").apply { writeBytes(moduleBytes) }
+        val library = File(system, "libpaintworker.so").apply { writeBytes(moduleBytes) }
+        val privateModule = File(app.filesDir, "private-driver.ko").apply { writeBytes(moduleBytes) }
+        val output = File(app.cacheDir, "driver-evidence.zip")
+        val evidence = FirmwareEvidence(listOf(system), { listOf(library) }, maxCodeBytes = moduleBytes.size,
+            driverCapture = { DriverSnapshot(JSONObject().put("schema", 1).put("driver", "t1000_spi"), listOf(module, privateModule)) })
+        assertEquals(1, evidence.write(output, JSONObject(), "report").codeFiles)
+        val artifact = manifest(output).getJSONArray("artifacts").getJSONObject(0)
+        assertEquals("kernel-module", artifact.getString("kind"))
+        assertEquals(module.canonicalPath, artifact.getString("source"))
+        ZipFile(output).use { zip ->
+            val details = JSONObject(zip.getInputStream(zip.getEntry("driver-details.json")).bufferedReader().readText())
+            assertEquals("t1000_spi", details.getString("driver"))
+            assertArrayEquals(moduleBytes, zip.getInputStream(zip.getEntry(artifact.getString("entry"))).readBytes())
+            assertFalse(manifest(output).toString().contains("private-driver"))
+        }
+    }
+
+    @Test fun compressedDriverModuleStaysCompressedInTheEvidenceArchive() {
+        val system = root()
+        val module = File(system, "t1000.ko.gz")
+        java.util.zip.GZIPOutputStream(module.outputStream()).use { it.write(byteArrayOf(127, 69, 76, 70, 4, 3, 2, 1)) }
+        val output = File(app.cacheDir, "compressed-driver.zip")
+        val evidence = FirmwareEvidence(listOf(system), { emptyList() },
+            driverCapture = { DriverSnapshot(JSONObject(), listOf(module)) })
+        assertEquals(1, evidence.write(output, JSONObject(), "report").codeFiles)
+        val artifact = manifest(output).getJSONArray("artifacts").getJSONObject(0)
+        assertEquals("kernel-module", artifact.getString("kind"))
+        ZipFile(output).use { zip ->
+            assertArrayEquals(module.readBytes(), zip.getInputStream(zip.getEntry(artifact.getString("entry"))).readBytes())
+        }
+    }
+
     @Test fun controllerWaitsForAChosenDestinationAndRecoversAfterProcessRecreation() {
         val system = root()
         val evidence = FirmwareEvidence(listOf(system), { emptyList() })

@@ -35,6 +35,29 @@ class InkTestView(context: Context) : View(context) {
     var firmwareTest = false
         private set
     private var systemHandoff = false
+    var hoverPreparationEnabled = true
+    var hoverPreparationRequests = 0L
+        private set
+    private var systemRegistered = false
+    private var registeredSince: Long? = null
+    private var lastEndUptime: Long? = null
+    private var idleGeneration = 0L
+    private var preparedGeneration = -1L
+    private var lastHoverRequestUptime: Long? = null
+    private var idleSequence = 0L
+    private data class IdleStart(
+        val sequence: Long, val downEventTime: Long, val idleMs: Long?,
+        val downEventAgeMs: Long, val registrationAgeMs: Long?,
+        val hoverPreparationAgeMs: Long?, val registered: Boolean,
+        val prepareEnabled: Boolean, var firstMoveAfterDownMs: Long? = null
+    )
+    private var idleStart: IdleStart? = null
+    private val idleStarts = ArrayDeque<String>()
+    val idleStartSummary get() = buildString {
+        append("Hover redraw enabled=$hoverPreparationEnabled; requests=$hoverPreparationRequests. ")
+        append("Idle starts (last ${idleStarts.size}; input timings exclude visible ink latency):")
+        if (idleStarts.isNotEmpty()) append('\n').append(idleStarts.joinToString("\n"))
+    }
     val completedStrokes get() = completed.size
     private var pressureSamples = 0L
     private var minPressure = 0f
@@ -78,9 +101,22 @@ class InkTestView(context: Context) : View(context) {
     }
     /** Firmware supplies live ink; Android prepares only completed strokes for its eventual clear. */
     fun systemMode() { mode(true); systemHandoff = true }
+    /** A redraw request is eligible only while this view owns an accepted System ink session. */
+    fun setSystemRegistration(active: Boolean) {
+        if (active && systemHandoff) {
+            if (!systemRegistered) registeredSince = SystemClock.uptimeMillis()
+            systemRegistered = true
+        } else {
+            systemRegistered = false
+            registeredSince = null
+            lastHoverRequestUptime = null
+        }
+    }
     /** Focus/pane changes cancel only unfinished ink; completed pressure outlines stay available. */
     fun pauseCurrentSystemStroke() {
+        setSystemRegistration(false)
         if (!systemHandoff) return
+        finishIdleStart("pause")
         removeCallbacks(settle)
         current = null; pointer = -1; inside = false
         committed = completed.size
@@ -96,6 +132,9 @@ class InkTestView(context: Context) : View(context) {
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         samples = 0; maxEventAgeMs = 0
         pressureSamples = 0; minPressure = 0f; maxPressure = 0f
+        setSystemRegistration(false)
+        lastEndUptime = null; idleGeneration = 0; preparedGeneration = -1
+        idleSequence = 0; idleStart = null; idleStarts.clear(); hoverPreparationRequests = 0
         nativeSnapshot?.recycle(); nativeSnapshot = null
         invalidate()
     }
@@ -120,12 +159,19 @@ class InkTestView(context: Context) : View(context) {
             requestUnbufferedDispatch(event)
             parent?.requestDisallowInterceptTouchEvent(true)
             removeCallbacks(settle)
+            if (systemHandoff) beginIdleStart(event.eventTime)
             pointer = event.getPointerId(index)
             current = ScratchStroke(pressureAware = systemHandoff); inside = false
             point(event.getX(index), event.getY(index), event.getPressure(index), event.eventTime)
         } else if (action == MotionEvent.ACTION_MOVE && pointer >= 0) {
             val pen = event.findPointerIndex(pointer)
             if (pen >= 0) {
+                idleStart?.let { start ->
+                    if (start.firstMoveAfterDownMs == null) {
+                        val first = if (event.historySize > 0) event.getHistoricalEventTime(0) else event.eventTime
+                        start.firstMoveAfterDownMs = interval(start.downEventTime, first)
+                    }
+                }
                 for (history in 0 until event.historySize) point(event.getHistoricalX(pen, history),
                     event.getHistoricalY(pen, history), event.getHistoricalPressure(pen, history), event.getHistoricalEventTime(history))
                 point(event.getX(pen), event.getY(pen), event.getPressure(pen), event.eventTime)
@@ -136,6 +182,7 @@ class InkTestView(context: Context) : View(context) {
             current?.let { completed.add(it) }
             current = null; pointer = -1; inside = false
             if (systemHandoff) {
+                endIdlePeriod("up")
                 // Prepare the underlying Android frame before the firmware's 800 ms overlay clear.
                 // Never include the current stroke: live motion must still come from System ink.
                 committed = completed.size
@@ -144,10 +191,60 @@ class InkTestView(context: Context) : View(context) {
             } else if (firmwareTest) postDelayed(settle, 1000)
             else { invalidate(); onStrokeFinished?.invoke() }
         } else if (action == MotionEvent.ACTION_CANCEL) {
+            val hadPointer = pointer >= 0
             current = null; pointer = -1; inside = false
+            if (systemHandoff && hadPointer) endIdlePeriod("cancel")
             if (systemHandoff || !firmwareTest) invalidate() else postDelayed(settle, 1000)
         }
         return true
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        if (systemHandoff && systemRegistered && hoverPreparationEnabled && pointer < 0 &&
+            event.pointerCount > 0 && event.getToolType(0) == MotionEvent.TOOL_TYPE_STYLUS &&
+            (action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE)) {
+            val ended = lastEndUptime
+            val now = SystemClock.uptimeMillis()
+            val x = event.getX(0); val y = event.getY(0)
+            if (ended != null && interval(ended, now) >= 1000 && preparedGeneration != idleGeneration &&
+                x.isFinite() && y.isFinite() && x >= 0 && y >= 0 && x < width && y < height) {
+                preparedGeneration = idleGeneration
+                lastHoverRequestUptime = now
+                hoverPreparationRequests++
+                // Only request a frame of existing completed ink. This is not a native
+                // wake command or evidence that the physical panel has become ready.
+                postInvalidateOnAnimation()
+            }
+        }
+        return super.onHoverEvent(event)
+    }
+
+    private fun interval(start: Long, end: Long) = (end - start).coerceIn(0, 600_000)
+
+    private fun beginIdleStart(eventTime: Long) {
+        val now = SystemClock.uptimeMillis()
+        idleStart = IdleStart(++idleSequence, eventTime, lastEndUptime?.let { interval(it, now) },
+            (now - eventTime).coerceIn(0, 60_000), registeredSince?.let { interval(it, now) },
+            lastHoverRequestUptime?.let { interval(it, now) }, systemRegistered, hoverPreparationEnabled)
+    }
+
+    private fun endIdlePeriod(reason: String) {
+        finishIdleStart(reason)
+        lastEndUptime = SystemClock.uptimeMillis()
+        idleGeneration++
+        lastHoverRequestUptime = null
+    }
+
+    private fun finishIdleStart(reason: String) {
+        val start = idleStart ?: return
+        idleStart = null
+        idleStarts.addLast("#${start.sequence} idleMs=${start.idleMs ?: "none"}; " +
+            "downEventAgeMs=${start.downEventAgeMs}; registrationAgeMs=${start.registrationAgeMs ?: "none"}; " +
+            "hoverPreparationAgeMs=${start.hoverPreparationAgeMs ?: "none"}; " +
+            "firstMoveAfterDownMs=${start.firstMoveAfterDownMs ?: "none"}; " +
+            "registered=${start.registered}; prepareEnabled=${start.prepareEnabled}; end=$reason")
+        while (idleStarts.size > 6) idleStarts.removeFirst()
     }
 
     private fun point(x: Float, y: Float, pressure: Float, time: Long) {
@@ -186,6 +283,7 @@ class InkTestView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
+        setSystemRegistration(false)
         removeCallbacks(settle); nativeSnapshot?.recycle(); nativeSnapshot = null
         super.onDetachedFromWindow()
     }

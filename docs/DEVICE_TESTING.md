@@ -99,7 +99,38 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: System ink completion, pressure and focus (0.3.2-test7)
+## Current step: first stroke after idle (0.3.2-test8)
+
+The user confirms test7 completed ink stays visible. They now report a first-
+stroke hesitation after a pause without changing focus; built-in Notes starts
+immediately. The native-file investigation found downstream driver pressure
+handling and a system motion filter, not a safe per-app filter control.
+See [native findings and limits](NATIVE_INK_FINDINGS.md).
+
+1. Update through **Ink Test → Updates → Check now** and select **System ink**.
+2. With **prepare after idle on hover** checked, write, lift the pen, pause for
+   one or two seconds, then bring the pen back over the sheet and write. Repeat
+   several times. Observe the first visible mark while the pen moves.
+3. Uncheck the option and repeat under the same conditions. Keep focus unchanged
+   for this comparison. It requests one completed-ink frame per idle period,
+   not a change to the native engine or a continuous refresh loop.
+4. **Copy report** after each comparison. Include whether a first-stroke delay
+   remains. The new idle history shows Android event intervals and registration/
+   hover-request ages; these are not visible panel latency measurements.
+5. For driver inspection, open **API files → Save ZIP**, choose Downloads and
+   Save, then attach the new ZIP. It now includes driver metadata and any matching
+   readable module, without rooting or boot-image access. Availability is not
+   guaranteed; an inventory-only driver result is still useful.
+6. Repeat in landscape split-screen after the single-pane check. System ink
+   should still resume on focus return, and hover preparation must remain off
+   while Fastnotes is unfocused or cleanup is pending. Also test pen-up continuity.
+
+High-speed video showing the pen tip and first visible ink is the useful way to
+measure an improvement. No faster result is inferred from successful redraws or
+shorter app input timings. This remains a temporary scratchpad; the normal note
+renderer, saved-note format and native drawing engine are unchanged.
+
+## Earlier System ink completion, pressure and focus (0.3.2-test7)
 
 The user reports test6's live writing works quite well. Ink disappears roughly one
 second after pen-up, then returns without the original pressure variation. The

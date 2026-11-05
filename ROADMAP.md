@@ -197,3 +197,23 @@ The order among the later ideas is undecided. The first priority remains
 - Prioritize known native libraries in explicit API export with 22 MiB combined
   code/24 MiB final ZIP, so exact pressure-curve investigation can proceed. Native
   code may delegate elsewhere; identical replay remains unproven.
+
+
+### Native findings and idle start (0.3.2-test8)
+
+- User confirms test7 ink stays visible, but first ink sometimes hesitates after
+  idle with focus unchanged; built-in Notes starts immediately. Current System
+  ink latency is otherwise well liked.
+- Both exported native ABIs pass raw pressure/width limits to the T1000 driver;
+  exact curve remains downstream. No matching public driver source was verified.
+- Default service motion filtering is one in five reports at count 4, but its
+  setting is not exposed per app; no guessed service/global patch is applied.
+- Add an optional one-frame hover preparation after idle and input-only start
+  history, with no native engine change. Pending: physical A/B first-mark onset,
+  both landscapes, split-screen focus recovery and pressure replay calibration.
+
+- User explicitly requested driver details: test8 export resolves T1000 sysfs
+  identity and bounded kernel/module metadata, and includes matching readable
+  module files under fixed roots. No root, device ioctl or boot-image read.
+  Physical availability and whether the curve is in driver vs controller remain
+  unresolved until inspection of that evidence.

@@ -91,3 +91,18 @@ landscape split-screen. The manual diagnostic stopped on focus loss; test7 retai
 selection, removes the region while inactive, and resumes after focused stable
 geometry. Native libraries omitted by the first export are prioritized in a new
 explicit export for static inspection. This draft remains **unsent**.
+
+
+## Native pressure and idle-start questions (5 November 2026)
+
+Both exact-device libpaintworker ABIs forward raw pressure to the T1000 device
+interface; width limits are separate. Could you supply the pressure normalization,
+curve and smoothing contract for exact completed-stroke replay? The server's
+InputWorker jump count is configured to 4, forwarding one of five MOVE/HOVER
+candidates; is there a supported scoped control for that worker's sampling?
+
+The user now confirms completed ink stays visible, but sometimes first ink
+hesitates after idle with focus unchanged. Built-in Notes starts immediately.
+The T1000 policy clears its temporary drawing state 800 ms after UP. What is the
+supported idle-to-writing readiness or hover preparation contract for third-party
+AutoDraw? No OEM binaries are attached to this public draft. It remains **unsent**.

@@ -1,3 +1,63 @@
+# 0.3.2-test8 idle-start and driver retrieval validation
+
+Software checks performed on 5 November 2026:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+BUILD SUCCESSFUL. **123 tests passed**, no failures, errors or skips.
+Lint has no errors (51 warnings and 1 hint);
+debug/release variants compile. Added/updated checks verify:
+
+- Hover preparation requires accepted System registration, a stylus, no current
+  stroke, at least one second since pen-up/cancel and the enabled checkbox. Only
+  one request occurs per idle period; mode reset/pause/unregistration gate it.
+- Preparation redraws only unchanged completed ink and cannot expose a moving
+  path. Its checkbox choice survives Activity recreation.
+- Idle input history uses the earliest batched MOVE, retains six bounded records
+  without coordinates/pressure traces, and labels timings as excluding visible
+  ink latency. No file I/O or logging callback is added to DOWN/MOVE.
+- Driver identity follows permitted character-device/sysfs/module links, filters
+  serial fields, finds matching indexed/deep modules and rejects symlink/index
+  escapes. Metadata/node/candidate budgets and unavailable-data reporting work.
+- Matching driver modules precede native/DEX code under export budgets; gzip
+  modules remain compressed, metadata enters driver-details.json, and private
+  candidates cannot supply module bytes.
+- Existing completion/pressure, native comparison, focus/resize/cleanup ownership,
+  saved-note isolation, updater and evidence-picker cases continue passing.
+
+The user confirms test7 ink stays visible, but reports first-stroke hesitation
+after idle with unchanged focus while built-in Notes starts immediately. This
+build preserves the working service and adds a reversible completed-frame hover
+experiment. A draw request is not a native-ready acknowledgement or a measured
+first-mark improvement. Physical A/B testing and pen-tip video remain necessary.
+
+Both OEM library ABIs were inspected statically outside the repository. They
+forward raw pressure and width limits to /dev/t1000_spi; no exact pressure curve
+was recovered. Driver details are requested through explicit read-only export,
+with metadata plus matching readable modules. Actual module availability is
+unverified; missing files do not prove the driver is built in. No OEM execution,
+module loading, device ioctl, boot-image read, root or new permission is added.
+
+The notebook renderer and saved-note format are unchanged. This is an in-memory
+scratchpad investigation, not durable notebook/eraser integration.
+
+## Investigation APK
+
+- Application ID `dev.fastnotes`; version `0.3.2-test8` (code 12)
+- Minimum API 29; target API 30; note format 1; same signing certificate
+- System protocol remains pinned to Viwoods AiPaper / API 33 / build 3.15.15
+- APK bytes: `7971288`
+- APK SHA-256: `a6b273eb22f3f6c1f072f8b27e057270e685e54e839ab58fb194cd4645608fdf`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+
+See [device checks](DEVICE_TESTING.md), [native findings](NATIVE_INK_FINDINGS.md)
+and [driver/API export](FIRMWARE_API_EVIDENCE.md).
+
+---
+
 # 0.3.2-test7 completion, focus and native export validation
 
 Software checks performed on 4 November 2026:

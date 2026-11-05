@@ -80,9 +80,11 @@ class FirmwareEvidence internal constructor(
     private val candidates: () -> List<File>,
     private val maxEntryBytes: Int = 20 * 1024 * 1024,
     private val maxCodeBytes: Int = 22 * 1024 * 1024,
-    private val maxScanBytes: Long = 64L * 1024 * 1024
+    private val maxScanBytes: Long = 64L * 1024 * 1024,
+    private val driverCapture: () -> DriverSnapshot = { DriverSnapshot(JSONObject().put("status", "not requested"), emptyList()) }
 ) {
-    constructor() : this(systemRoots(), ::systemCandidates)
+    constructor() : this(systemRoots() + DriverEvidence.systemModuleRoots(), ::systemCandidates,
+        driverCapture = { DriverEvidence().capture() })
 
     fun write(destination: File, device: JSONObject, report: String): FirmwareEvidenceSummary {
         destination.parentFile?.mkdirs()
@@ -111,24 +113,35 @@ class FirmwareEvidence internal constructor(
                     return true
                 }
                 val allowedRoots = roots.map { it.canonicalFile }
-                val files = candidates().mapNotNull { candidate ->
+                val driver = runCatching(driverCapture).getOrElse {
+                    DriverSnapshot(JSONObject().put("status", "capture failed").put("error", it.javaClass.simpleName), emptyList())
+                }
+                fun isModule(file: File) = file.name.matches(Regex(".*\\.ko(?:\\.(?:gz|xz|zst))?", RegexOption.IGNORE_CASE))
+                val files = (driver.modules + candidates()).mapNotNull { candidate ->
                     val file = runCatching { candidate.canonicalFile }.getOrNull() ?: return@mapNotNull null
                     file.takeIf { f -> allowedRoots.any { root -> f.path.startsWith(root.path + File.separator) } }
-                }.distinctBy { it.path }.sortedBy { if (it.extension == "so") 0 else 1 }.take(64)
+                }.distinctBy { it.path }.sortedBy { if (isModule(it)) 0 else if (it.extension == "so") 1 else 2 }.take(64)
                 fun includeBinary(file: File) {
                     val item = JSONObject().put("source", file.path).put("bytes", file.length())
                         .put("present", file.isFile).put("readable", file.canRead())
                     inventory.put(item)
                     if (!file.isFile || !file.canRead()) { item.put("status", "missing or unreadable"); return }
-                    if (file.length() !in 4L..maxEntryBytes.toLong() || scan.bytes + file.length() > maxScanBytes ||
+                    val limit = if (isModule(file)) minOf(maxEntryBytes, 8 * 1024 * 1024) else maxEntryBytes
+                    if (file.length() !in 4L..limit.toLong() || scan.bytes + file.length() > maxScanBytes ||
                         file.length() > maxCodeBytes - exported) { item.put("status", "size or budget limit"); return }
                     try {
-                        val data = file.inputStream().use { scan.read(it, maxEntryBytes) }
-                        val valid = if (file.extension == "so") data.take(4) == listOf<Byte>(127, 69, 76, 70)
-                            else data.take(4) == "vdex".toByteArray().toList()
+                        val data = file.inputStream().use { scan.read(it, limit) }
+                        val valid = when {
+                            isModule(file) && file.extension.equals("gz", true) -> data.take(2) == listOf<Byte>(31, -117)
+                            isModule(file) && file.extension.equals("xz", true) -> data.take(6) == listOf<Byte>(-3, 55, 122, 88, 90, 0)
+                            isModule(file) && file.extension.equals("zst", true) -> data.take(4) == listOf<Byte>(40, -75, 47, -3)
+                            file.extension == "so" || isModule(file) -> data.take(4) == listOf<Byte>(127, 69, 76, 70)
+                            else -> data.take(4) == "vdex".toByteArray().toList()
+                        }
                         if (valid) {
                             val label = (file.parentFile?.name ?: "system") + "-" + file.name
-                            val included = include(file.path, label, if (file.extension == "so") "native-library" else "vdex", data)
+                            val kind = if (isModule(file)) "kernel-module" else if (file.extension == "so") "native-library" else "vdex"
+                            val included = include(file.path, label, kind, data)
                             item.put("status", if (included) "included" else "export budget reached")
                         } else item.put("status", "unrecognized header")
                     } catch (failure: Exception) {
@@ -136,8 +149,8 @@ class FirmwareEvidence internal constructor(
                         item.put("status", "read failed: " + failure.javaClass.simpleName)
                     }
                 }
-                // Preserve the small native brush implementation before scanning large DEX archives.
-                files.filter { it.extension == "so" }.forEach(::includeBinary)
+                // Preserve identified driver modules and native brush code before large DEX archives.
+                files.filter { isModule(it) || it.extension == "so" }.forEach(::includeBinary)
                 var haveDex = false
                 for (file in files.filter { it.extension == "jar" }) {
                     val item = JSONObject().put("source", file.path).put("bytes", file.length())
@@ -173,6 +186,7 @@ class FirmwareEvidence internal constructor(
                     }
                 }
                 if (!haveDex) files.filter { it.extension == "vdex" }.forEach(::includeBinary)
+                add("driver-details.json", driver.data.toString(2).toByteArray(Charsets.UTF_8))
                 add("ink-report.txt", report.take(64 * 1024).toByteArray(Charsets.UTF_8))
                 val manifest = JSONObject().put("schema", 1).put("device", device).put("artifacts", artifacts)
                     .put("inventory", inventory).put("codeFiles", count).put("codeBytes", exported).put("scanBytes", scan.bytes)
