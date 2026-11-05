@@ -1,6 +1,20 @@
 # Fastnotes: priorities and future ideas
 
-Current native investigation: [SoftSolution backend and test10 buffer fix](docs/SOFTSOLUTION_FINDINGS.md).
+Current native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
+
+### Preferred System ink restoration (0.3.2-test11)
+
+- User reports test10's Worker refresh still skips and prefers test6's live
+  System feel. Restore that explicit option on SoftSolution; backend information
+  alone is not a reason to block it.
+- Correct the static conclusion: nonempty scoped registration enables native
+  handwriting and initializes WritingSurface/WritingProducer in both ABIs, even
+  though captured auto-draw methods are empty. Complete physical behavior remains
+  uncharacterized; the earlier positive user observation remains relevant.
+- Restore test6 manual request ordering/instructions while retaining immediate
+  completed replay and later focus/resize cleanup. Capture primitive pen samples
+  during motion and build pressure outlines only at UP.
+- Validate live feel and pen-up continuity on the tablet before claiming recovery.
 
 ### SoftSolution correction (0.3.2-test10)
 

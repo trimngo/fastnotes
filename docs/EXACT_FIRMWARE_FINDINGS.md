@@ -2,11 +2,12 @@
 
 **Backend correction, 5 November 2026:** DEX contains a T1000 policy, but the
 native backend is selected separately by `ro.eink.type`. The user's value is
-`SoftSolution`, whose auto-draw entry points are empty. Accepted service calls
-therefore do not establish a usable System ink route on this tablet. See
-[the selected-backend and bitmap fix](SOFTSOLUTION_FINDINGS.md); earlier
-T1000 pressure/overlay-clear explanations below are limited to that inactive
-implementation.
+`SoftSolution`. Some captured auto-draw entry points are empty, but scoped
+registration also initializes WritingSurface/WritingProducer. Neither those
+empty methods nor an accepted call establish the complete runtime result.
+Test11 removes test10's overbroad block and restores the user's preferred System
+comparison. See [corrected findings](SOFTSOLUTION_FINDINGS.md); earlier T1000
+pressure/overlay-clear explanations remain limited to that inactive implementation.
 
 4 November 2026. Source: the user's explicit test5 API evidence export, model
 Viwoods AiPaper, Android 13/API 33, system build 3.15.15. ZIP integrity and each

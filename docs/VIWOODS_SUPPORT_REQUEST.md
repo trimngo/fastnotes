@@ -17,12 +17,16 @@ Notes produced none of that marker. The selected SoftSolution native backend
 inherits empty auto-draw/region methods, despite the DEX containing a T1000 policy.
 The T1000-specific pressure/device-interface analysis does not describe the
 selected backend and does not establish a need to retrieve a T1000 driver.
+However, scoped region registration also initializes WritingSurface via native
+handwriting enable and WritingProducer. Empty auto-draw methods do not establish
+that the whole scoped mode has no useful effect. The user preferred an earlier
+System comparison; test11 restores it after test10 blocked it too broadly.
 
 Static inspection of exact-device libpaintworker revealed a concrete Fastnotes
 bug: native registration deduplicates by bitmap identity OR layer role, while we
 registered one object as foreground and background. Test10 uses separate owned
 bitmaps, preserves both roles and updates completed background at handoff. This
-contract correction is software-verified; its physical effect awaits tablet tests.
+contract correction is software-verified; the user still reports Worker gaps.
 No OEM code is executed, bundled or attached to this public request.
 
 Could you provide the supported SoftSolution contract for:

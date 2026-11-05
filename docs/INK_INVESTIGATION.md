@@ -1,9 +1,11 @@
 # Reconsidering the ink backend after 0.3.1
 
-**Current finding (5 November 2026):** the device selects `SoftSolution`.
-System auto-draw on that backend is empty despite accepted registration and live
-policy callbacks. Test10 corrects a verified bitmap registration bug in the
-actual SoftSolution native route. See [current findings](SOFTSOLUTION_FINDINGS.md).
+**Current finding (5 November 2026):** test10's Worker refresh still skips, and
+the user wants the earlier System live-writing behavior back. Blocking that mode
+from the SoftSolution property was too strong: scoped registration also
+initializes WritingSurface despite some empty drawing methods. Test11 restores
+the earlier request/layout, immediate completion and lighter live capture. See
+[corrected findings](SOFTSOLUTION_FINDINGS.md).
 
 30 October 2026. Full-size Viwoods AiPaper, Android 13/API 33, firmware 3.15.15.
 

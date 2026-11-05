@@ -27,8 +27,11 @@ class InkTestView(context: Context) : View(context) {
     private var committed = 0
     private var lastX = 0f
     private var lastY = 0f
-    private var lastRadius = 1f
     private var inside = false
+    // Reuse primitive storage during live System input. Outline geometry is built only at UP.
+    private val pressurePoints = FloatArray(MAX_SAMPLES * 3)
+    private val pressureStarts = BooleanArray(MAX_SAMPLES)
+    private var pressurePointCount = 0
     private var nativeSnapshot: Bitmap? = null
     private var captureNative: ((Canvas) -> Boolean)? = null
     private var nativePenDown: (() -> Boolean)? = null
@@ -40,7 +43,7 @@ class InkTestView(context: Context) : View(context) {
     private var minPressure = 0f
     private var maxPressure = 0f
     val handoffDescription get() = if (systemHandoff)
-        "Completed strokes at pen-up; pressure-aware replay, estimated 2–8 px; native curve unverified"
+        "Completed strokes at pen-up; pressure-aware replay built at pen-up, estimated 2–8 px; native curve unverified"
         else if (firmwareTest) "App ink after one second of quiet" else "Android live drawing"
     val pressureSummary get() = if (pressureSamples == 0L) "none" else
         String.format(Locale.ROOT, "%d normalized samples, %.3f–%.3f", pressureSamples, minPressure, maxPressure)
@@ -76,13 +79,13 @@ class InkTestView(context: Context) : View(context) {
         systemHandoff = false
         clear(); firmwareTest = firmware
     }
-    /** Firmware supplies live ink; Android prepares only completed strokes for its eventual clear. */
+    /** Request System preview; Android draws only completed strokes in this mode. */
     fun systemMode() { mode(true); systemHandoff = true }
     /** Focus/pane changes cancel only unfinished ink; completed pressure outlines stay available. */
     fun pauseCurrentSystemStroke() {
         if (!systemHandoff) return
         removeCallbacks(settle)
-        current = null; pointer = -1; inside = false
+        current = null; pointer = -1; inside = false; pressurePointCount = 0
         committed = completed.size
         invalidate()
     }
@@ -94,6 +97,7 @@ class InkTestView(context: Context) : View(context) {
     fun clear() {
         removeCallbacks(settle)
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
+        pressurePointCount = 0
         samples = 0; maxEventAgeMs = 0
         pressureSamples = 0; minPressure = 0f; maxPressure = 0f
         nativeSnapshot?.recycle(); nativeSnapshot = null
@@ -121,7 +125,7 @@ class InkTestView(context: Context) : View(context) {
             parent?.requestDisallowInterceptTouchEvent(true)
             removeCallbacks(settle)
             pointer = event.getPointerId(index)
-            current = ScratchStroke(pressureAware = systemHandoff); inside = false
+            current = ScratchStroke(pressureAware = systemHandoff); inside = false; pressurePointCount = 0
             point(event.getX(index), event.getY(index), event.getPressure(index), event.eventTime)
         } else if (action == MotionEvent.ACTION_MOVE && pointer >= 0) {
             val pen = event.findPointerIndex(pointer)
@@ -133,25 +137,28 @@ class InkTestView(context: Context) : View(context) {
         } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) &&
             event.getPointerId(index) == pointer) {
             point(event.getX(index), event.getY(index), event.getPressure(index), event.eventTime)
-            current?.let { completed.add(it) }
-            current = null; pointer = -1; inside = false
+            current?.let { stroke ->
+                if (stroke.pressureAware) buildPressureOutline(stroke.path)
+                if (!stroke.path.isEmpty) completed.add(stroke)
+            }
+            current = null; pointer = -1; inside = false; pressurePointCount = 0
             if (systemHandoff) {
-                // Prepare the underlying Android frame before the firmware's 800 ms overlay clear.
-                // Never include the current stroke: live motion must still come from System ink.
+                // Keep completed ink ready at pen-up instead of waiting for a quiet timer.
+                // Never include the current stroke: live motion is the requested System preview.
                 committed = completed.size
                 invalidate()
                 onStrokeFinished?.invoke()
             } else if (firmwareTest) postDelayed(settle, 1000)
             else { invalidate(); onStrokeFinished?.invoke() }
         } else if (action == MotionEvent.ACTION_CANCEL) {
-            current = null; pointer = -1; inside = false
+            current = null; pointer = -1; inside = false; pressurePointCount = 0
             if (systemHandoff || !firmwareTest) invalidate() else postDelayed(settle, 1000)
         }
         return true
     }
 
     private fun point(x: Float, y: Float, pressure: Float, time: Long) {
-        if (samples >= 50_000) return
+        if (samples >= MAX_SAMPLES) return
         samples++
         maxEventAgeMs = maxOf(maxEventAgeMs, (SystemClock.uptimeMillis() - time).coerceIn(0, 60_000))
         if (x < 0 || y < 0 || x >= width || y >= height) { inside = false; return }
@@ -162,22 +169,11 @@ class InkTestView(context: Context) : View(context) {
             if (pressureSamples == 0L) { minPressure = normalized; maxPressure = normalized }
             else { minPressure = minOf(minPressure, normalized); maxPressure = maxOf(maxPressure, normalized) }
             pressureSamples++
-            // Independent replay estimate inspired by the service defaults, not its unknown JNI curve.
-            val radius = (2f + 6f * normalized) / 2f
-            if (inside) {
-                val distance = hypot(x - lastX, y - lastY)
-                if (distance > 0f) {
-                    val nx = (y - lastY) / distance
-                    val ny = (lastX - x) / distance
-                    path.moveTo(lastX + nx * lastRadius, lastY + ny * lastRadius)
-                    path.lineTo(x + nx * radius, y + ny * radius)
-                    path.lineTo(x - nx * radius, y - ny * radius)
-                    path.lineTo(lastX - nx * lastRadius, lastY - ny * lastRadius)
-                    path.close()
-                }
-            }
-            path.addCircle(x, y, radius, Path.Direction.CW)
-            lastRadius = radius
+            val offset = pressurePointCount * 3
+            pressurePoints[offset] = x
+            pressurePoints[offset + 1] = y
+            pressurePoints[offset + 2] = normalized
+            pressureStarts[pressurePointCount++] = !inside
         } else if (!inside) { path.moveTo(x, y); path.lineTo(x + 0.01f, y) }
         else if (x != lastX || y != lastY) path.lineTo(x, y)
         lastX = x; lastY = y; inside = true
@@ -185,8 +181,39 @@ class InkTestView(context: Context) : View(context) {
         if (!firmwareTest) invalidate()
     }
 
+    private fun buildPressureOutline(path: Path) {
+        var previousX = 0f
+        var previousY = 0f
+        var previousRadius = 1f
+        for (index in 0 until pressurePointCount) {
+            val offset = index * 3
+            val x = pressurePoints[offset]
+            val y = pressurePoints[offset + 1]
+            // Independent replay estimate, not the firmware's unknown brush curve.
+            val radius = (2f + 6f * pressurePoints[offset + 2]) / 2f
+            if (!pressureStarts[index]) {
+                val distance = hypot(x - previousX, y - previousY)
+                if (distance > 0f) {
+                    val nx = (y - previousY) / distance
+                    val ny = (previousX - x) / distance
+                    path.moveTo(previousX + nx * previousRadius, previousY + ny * previousRadius)
+                    path.lineTo(x + nx * radius, y + ny * radius)
+                    path.lineTo(x - nx * radius, y - ny * radius)
+                    path.lineTo(previousX - nx * previousRadius, previousY - ny * previousRadius)
+                    path.close()
+                }
+            }
+            path.addCircle(x, y, radius, Path.Direction.CW)
+            previousX = x; previousY = y; previousRadius = radius
+        }
+    }
+
     override fun onDetachedFromWindow() {
         removeCallbacks(settle); nativeSnapshot?.recycle(); nativeSnapshot = null
         super.onDetachedFromWindow()
+    }
+
+    private companion object {
+        const val MAX_SAMPLES = 50_000
     }
 }

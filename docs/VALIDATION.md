@@ -1,3 +1,37 @@
+# 0.3.2-test11 System ink restoration validation
+
+5 November 2026. Full verification completed successfully:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+**127 tests passed**, no failures, errors or skips. Lint has no errors (51 warnings
+and 1 hint), and debug/release compile. Independent review found no blocking
+ownership, input bounds, cancellation or focus-resumption issue. Relevant cases
+verify SoftSolution can make the explicit scoped request, production backend
+reading is diagnostic, manual registration precedes System view preparation,
+completed ink appears at UP and persists through later motion, pressure history
+and clamps survive deferred construction, outside-page reentry does not bridge
+segments, and focus pause discards only unfinished samples. The earlier native
+snapshot-delay, storage, updater and cleanup tests continue passing.
+
+The user reports test10 still skips in Worker mode and misses the preferred
+earlier System feel. Test11 removes the overbroad block, restores test6's manual
+order/instruction layout, moves pressure geometry to UP and retains completion/
+focus improvements. This is not an exact source rollback and is not a measured
+physical recovery. No new native/global-setting/driver tweak is applied. See
+[corrected findings and device checks](SOFTSOLUTION_FINDINGS.md).
+
+APK identity:
+
+- `dev.fastnotes`, `0.3.2-test11`, code 15; minimum API 29, target API 30
+- Bytes: `7954904`
+- SHA-256: `5e8d22309d4667439f326de769c20b14ae856f21560a9db1b9438204d6dfec91`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Same saved-note format; install over the existing app
+
 # 0.3.2-test10 SoftSolution buffer validation
 
 5 November 2026. The full Android verification command completed successfully:

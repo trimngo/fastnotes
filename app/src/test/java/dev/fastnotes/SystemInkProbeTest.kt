@@ -52,35 +52,37 @@ private class SystemInkBinder(descriptor: String = SystemInkProbe.DESCRIPTOR) : 
 class SystemInkProbeTest {
     private val supported = SystemInkDevice("Viwoods AiPaper", "3.15.15", 33)
 
-    @Test fun productionProbeReadsTheFirmwareBackendBeforeConnecting() {
+    @Test fun productionProbeRecordsTheBackendWithoutDeclaringItUnsupported() {
         ShadowBuild.setModel("Viwoods AiPaper")
         ReflectionHelpers.setStaticField(Build::class.java, "DISPLAY", "3.15.15")
         ShadowSystemProperties.override("ro.eink.type", "SoftSolution")
-        val probe = SystemInkProbe()
-        assertFalse(probe.start(Rect(0, 0, 100, 100)))
-        assertTrue(probe.unsupportedBackend)
-        assertFalse(probe.hasRegistration)
-        assertTrue(probe.status.contains("SoftSolution"))
+        val stages = ArrayList<String>()
+        val probe = SystemInkProbe(stages::add)
+        probe.start(Rect(0, 0, 100, 100))
+        assertTrue(stages.any { it.contains("System ink backend: SoftSolution") })
+        assertTrue(stages.any { it == "Looking up ENoteSetting system service" })
+        probe.stop()
     }
 
-    @Test fun softSolutionNeverRegistersTheNoOpSystemDrawingPath() {
+    @Test fun softSolutionAllowsTheExplicitScopedProbeAndKeepsItsResultUnverified() {
         var connections = 0
+        val service = SystemInkBinder()
         val stages = ArrayList<String>()
         val probe = SystemInkProbe(stages::add, { supported.copy(einkType = "SoftSolution") },
-            { connections++; SystemInkBinder() })
-        assertFalse(probe.start(Rect(0, 0, 100, 100)))
-        assertEquals(0, connections)
-        assertFalse(probe.hasRegistration)
-        assertTrue(probe.unsupportedBackend)
-        assertTrue(probe.status.contains("SoftSolution"))
-        assertTrue(probe.status.contains("Worker refresh"))
+            { connections++; service })
+        assertTrue(probe.start(Rect(0, 0, 100, 100)))
+        assertEquals(1, connections)
+        assertTrue(probe.hasRegistration)
+        assertTrue(probe.status.contains("unverified"))
+        assertTrue(stages.any { it.contains("System ink backend: SoftSolution") })
+        assertTrue(probe.stop())
+        assertEquals(listOf(0x18, 0x19), service.calls.map { it.code })
     }
 
     @Test fun t1000BackendStillUsesTheVerifiedScopedProtocol() {
         val service = SystemInkBinder()
         val probe = SystemInkProbe({}, { supported.copy(einkType = "T1000") }, { service })
         assertTrue(probe.start(Rect(0, 0, 100, 100)))
-        assertFalse(probe.unsupportedBackend)
         assertTrue(probe.stop())
         assertEquals(listOf(0x18, 0x19), service.calls.map { it.code })
     }

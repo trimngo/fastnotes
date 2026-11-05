@@ -106,9 +106,8 @@ class InkTestActivity : Activity() {
             "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = if (EinkBackend.readType() == "SoftSolution")
-                "This tablet uses SoftSolution. Select Worker refresh to test native live ink with separate foreground/background buffers. Reference callback compares execution timing. Android replay waits one second after pen-up. System auto-draw is unavailable on this backend."
-            else "Temporary scratchpad. System ink requests firmware live writing; the app redraws completed strokes at pen-up with pressure variation. Watch the pen-up transition, then Copy report. Worker and Reference modes keep their earlier one-second delay."
+            // Test6 wording/layout, with only the completed-ink timing corrected.
+            text = "Temporary scratchpad. Try System ink with fast pen strokes. It requests the firmware’s own ink inside this area. App ink stays visible after pen-up. Record what you saw while writing, then Copy report. Other modes retain the earlier comparisons."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -168,36 +167,36 @@ class InkTestActivity : Activity() {
     }
 
     private fun startSystemTest() {
-        if (!systemSelected) paper.systemMode()
+        // Restore test6's manual order: clean up, register, then prepare the view.
+        // Do not reset/invalidate the scratchpad repeatedly before the request.
+        if (!stopTest("Preparing System ink…")) return
         systemSelected = true
         systemStartFailed = false
-        if (!stopTest("Preparing System ink…", retainSystem = true)) return
         modeLabel = "System ink"
         resetObservation()
-        paper.systemMode()
         systemResumePending = true
         // A deliberate button selection can use the current laid-out pane. Automatic
         // restoration below requires the independently observed stable geometry.
         val current = geometry()
-        if (resumed && hasWindowFocus() && current != null) registerSystemTest(current)
-        else resumeSystemTest()
+        if (resumed && hasWindowFocus() && current != null) registerSystemTest(current, initializePaper = true)
+        else {
+            paper.systemMode()
+            resumeSystemTest()
+        }
     }
 
-    private fun registerSystemTest(current: Geometry) {
+    private fun registerSystemTest(current: Geometry, initializePaper: Boolean = false) {
         systemResumePending = false
         if (systemProbe.start(current.visible)) {
             registeredGeometry = current
+            if (initializePaper) paper.systemMode()
             modeLabel = "System ink"
             status.text = "System ink requested. Look for complete ink while moving, then record the result."
         } else {
             registeredGeometry = null
             systemStartFailed = true
-            if (systemProbe.unsupportedBackend) {
-                systemSelected = false
-                modeLabel = "Android pen (System auto-draw unavailable)"
-                paper.mode(false)
-                status.text = systemProbe.status
-            } else status.text = "Select System ink to retry. ${systemProbe.status}"
+            if (systemProbe.hasRegistration && !paper.firmwareTest) paper.mode(true)
+            status.text = "Select System ink to retry. ${systemProbe.status}"
         }
     }
 

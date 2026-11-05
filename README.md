@@ -1,17 +1,17 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test10 fixes native foreground/background registration.**
-USB evidence and the user's `ro.eink.type=SoftSolution` result identified the
-actual rendering backend. Its System auto-draw implementation is empty; a
-successful service registration did not establish working ink. The bitmap route
-had a separate verified bug: sharing one bitmap between foreground and background
-caused the firmware to replace one role with the other. These buffers now have
-distinct identities and retain both roles through completed-stroke handoff.
-Use **Worker refresh** in Ink Test, or the normal notebook's native renderer.
-The contract fix is verified in software; physical gaps, idle delay, orientation
-and split-screen behavior still require device testing. See
-[SoftSolution findings](docs/SOFTSOLUTION_FINDINGS.md).
+keeps notes offline. **0.3.2-test11 restores the earlier System ink option.**
+The user preferred test6's live writing, despite ink disappearing after pen-up;
+test10's Worker refresh still skips. Blocking System ink from the SoftSolution
+property was too strong a conclusion: scoped registration also initializes the
+firmware writing surface, even though some native drawing methods are empty.
+Test11 restores the earlier manual registration order and instruction layout,
+keeps completed ink available immediately at pen-up, and defers pressure-outline
+construction until UP so it does not run during live System input. Focus/resize
+cleanup and automatic return remain. Open **Fastnotes Ink Test → System ink**.
+The earlier live result is the hardware baseline; recovery needs device testing.
+See [corrected backend findings](docs/SOFTSOLUTION_FINDINGS.md).
 See [native pressure/latency findings](docs/NATIVE_INK_FINDINGS.md),
 [exact-firmware findings](docs/EXACT_FIRMWARE_FINDINGS.md) and
 [the investigation](docs/INK_INVESTIGATION.md).
@@ -47,8 +47,8 @@ See [native pressure/latency findings](docs/NATIVE_INK_FINDINGS.md),
   crash/Android process-exit evidence without note contents or exception messages.
 - **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
   process. It offers Android pen, System ink, Worker refresh and Reference callback.
-  On SoftSolution, System ink is blocked with an explanation; use Worker refresh
-  or Reference callback to exercise the actual native bitmap/surface backend.
+  System ink remains an explicit scoped probe on SoftSolution; backend names
+  are diagnostic and do not determine the user's observed live result.
   System ink uses an exact firmware-pinned service protocol to register only the
   visible scratchpad, without app-side native bitmap/input initialization. The
   two older bitmap modes retain clipped refresh requests. Worker/reference

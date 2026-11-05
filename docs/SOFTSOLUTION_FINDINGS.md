@@ -1,5 +1,12 @@
 # SoftSolution backend and bitmap registration correction
 
+**Test11 correction:** the test10 System ink block was unjustified by the
+captured no-op methods. Scoped registration also initializes WritingSurface via
+WritingProducer. The user reports Worker refresh still skips and asks to return
+to test6's preferred live-writing behavior. Test11 restores that option and the
+earlier manual startup/layout, retaining immediate completed ink and moving
+pressure-outline work to UP. The complete runtime effect is still unverified.
+
 5 November 2026. Full-size Viwoods AiPaper, Android 13/API 33, build 3.15.15.
 The USB report confirms installed Fastnotes 0.3.2-test9, code 13, kernel
 `4.19.191-g1add12f05208`, hardware `mt8788`, board platform `mt6771`.
@@ -33,10 +40,18 @@ The active backend is a runtime choice, not established by class/method names
 present in framework/services DEX.
 
 SoftSolution's virtual autoDraw and auto-draw region methods inherit empty base
-implementations. System registration and input callbacks can therefore succeed
-without a native drawing operation on this backend. Its actual bitmap rendering
-uses WritingSurface and the firmware's `WritingProducer` service. This is a
-native surface route, separate from ordinary Android View drawing.
+implementations in the captured ELF. This does **not** mean scoped registration
+has no effect. AutoDrawPolicy enables the callback for nonempty effective
+regions; ENoteWriting.setWritingInputCallBackable calls native handwriting
+enable. On SoftSolution that invokes Init/exit as well as toggling InputWorker.
+Init calls WritingSurface::init and connects/queues the firmware WritingProducer
+surface. These effects are confirmed in both ABIs: native handwriting enable
+around ARM64 `0x15cf4` and ARM32 `0x10592`, with ARM64 SoftSolution Init at
+`0x12d90`. The full producer/runtime presentation effect and exact library loaded
+by the live process have not been established. Therefore the test10 hard block
+was stronger than the evidence and is removed. Successful registration still
+does not prove physical drawing, but the earlier positive device result remains
+relevant evidence for this explicitly requested probe.
 
 Earlier claims that this tablet's pressure path reaches `/dev/t1000_spi`, that
 the pressure curve must be downstream of that driver, and that the 800 ms T1000
@@ -73,7 +88,7 @@ The identity/role replacement and compositor were verified in both exported ABIs
 This is a verified contract violation and a plausible contributor to gaps. A
 physical handwriting fix still requires device testing.
 
-## Test10 implementation
+## Test10 implementation (historical; System block withdrawn)
 
 - Keep three distinct owned bitmaps: mutable preview, native foreground
   presentation, and completed background. Both native roles survive registration.
@@ -95,8 +110,27 @@ pixels remain available before UP, completed background stays unchanged during
 the next stroke, and failure/cleanup remain handled. These software checks do
 not emulate physical e-ink presentation.
 
-After updating in place, use **Fastnotes Ink Test → Worker refresh** first.
-Record ink during a rapid continuous stroke, completion and the first stroke
-after idle. Then compare the normal notebook, both landscape rotations and
-Chrome split-screen. System ink is intentionally unavailable on SoftSolution.
-Exact stock pressure/brush matching and measured latency remain open.
+The user reports test10 is worse for their workflow: Worker refresh still skips,
+and the System option they preferred is blocked. The native bitmap registration
+correction is software-verified, but did not establish the desired physical
+improvement. Do not use it as evidence that the preferred System route was
+unavailable or that the user should keep switching to Worker refresh.
+
+## Test11: restore the preferred System comparison
+
+- Re-enable the exact scoped add/remove request on SoftSolution; keep backend
+  information and accepted-but-unverified wording. No global flags are added.
+- Restore test6's manual cleanup → registration → view-preparation order and
+  original instruction paragraph, correcting only its completed-ink timing.
+- Retain immediate completed ink at UP to address the earlier disappearance.
+  During System DOWN/MOVE, collect bounded primitive coordinates/pressure;
+  construct the independent pressure outline only at UP. No moving app path or
+  pressure-outline geometry is drawn/built during System live motion.
+- Keep focus/resize ownership cleanup, completed ink and automatic focus return
+  for the requested split-screen workflow. This is a combination of test6
+  startup with later handoff/lifecycle improvements, not an exact source rollback.
+
+Use the separate **Fastnotes Ink Test** launcher icon and select **System ink**
+first. Check the live feel the user liked, completed-ink continuity, the first
+stroke after idle and then landscape split-screen. Physical recovery, exact
+stock pressure matching and measured latency remain open.

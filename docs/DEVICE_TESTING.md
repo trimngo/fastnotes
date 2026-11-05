@@ -99,7 +99,31 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: SoftSolution buffer fix (0.3.2-test10)
+## Current step: restore preferred System ink (0.3.2-test11)
+
+The user reports Worker refresh still skips and prefers the earlier System ink
+live feel, despite its pen-up disappearance. Test10's backend block was based on
+an incomplete analysis: scoped registration also initializes the firmware
+writing surface. Test11 removes that block and restores test6's manual request
+order/layout, combining it with immediate completed replay and later focus cleanup.
+
+1. Update in place through **Ink Test → Updates → Check now**. Open the separate
+   **Fastnotes Ink Test** launcher icon directly and select **System ink**.
+2. In portrait, check rapid continuous strokes **while the pen moves**, then
+   lift and wait a few seconds without touching anything. Completed ink should
+   remain available. Record any disappearance, shape change or first-stroke delay.
+3. Select the observed result and **Copy report**. The backend remains diagnostic;
+   an accepted request still says visible ink is unverified.
+4. If the preferred live feel has returned, repeat landscape and Chrome split-
+   screen, switching focus and resizing. Check completed ink and automatic return.
+
+System DOWN/MOVE now capture bounded primitive x/y/pressure and segment breaks;
+the estimated completed pressure outline is built only at UP. The app does not
+draw its moving System path. This preserves a useful live-preview comparison.
+It is not an exact test6 source rollback, because completion/focus improvements
+are retained. No physical recovery or pressure-curve equivalence is claimed.
+
+## Earlier SoftSolution buffer fix (0.3.2-test10)
 
 USB captured 982 System policy callbacks in Fastnotes and none of that marker
 in built-in Notes. The user confirmed `ro.eink.type=SoftSolution`; this backend's

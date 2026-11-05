@@ -29,13 +29,10 @@ class SystemInkProbe internal constructor(
     private var registered: Rect? = null
     private var stage = "Not started"
     val hasRegistration get() = registered != null
-    var unsupportedBackend = false
-        private set
     var status = "System ink has not been requested."
         private set
 
     fun start(rect: Rect): Boolean {
-        unsupportedBackend = false
         if (!stop()) {
             status = "Previous system ink cleanup is unconfirmed. Close this test."
             return false
@@ -50,12 +47,9 @@ class SystemInkProbe internal constructor(
             record("System ink blocked: device/build does not match inspected protocol")
             return false
         }
-        if (current.einkType == "SoftSolution") {
-            unsupportedBackend = true
-            status = "System auto-draw is unavailable on SoftSolution. Select Worker refresh or Reference callback."
-            record(status)
-            return false
-        }
+        // Backend selection is diagnostic, not proof that the complete scoped path
+        // has no effect: registration also initializes the firmware writing surface.
+        record("System ink backend: ${current.einkType ?: "unavailable"}; visible ink requires a device check")
         return try {
             record("Looking up ENoteSetting system service")
             val service = connect() ?: error("System service unavailable")

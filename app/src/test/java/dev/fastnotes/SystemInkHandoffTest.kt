@@ -152,4 +152,44 @@ class SystemInkHandoffTest {
         assertEquals(pressures.size, paper.completedStrokes)
         image.recycle()
     }
+
+    @Test fun outOfBoundsSamplesBreakDeferredPressureGeometryInsteadOfBridgingThePage() {
+        stroke(70f)
+        send(MotionEvent.ACTION_DOWN, 100f, 150f, 0.2f)
+        send(MotionEvent.ACTION_MOVE, 160f, 150f, 1f)
+        send(MotionEvent.ACTION_MOVE, -20f, 190f, 1f)
+        send(MotionEvent.ACTION_MOVE, 240f, 210f, 1f)
+        send(MotionEvent.ACTION_MOVE, 280f, 210f, 0.2f)
+        render().let {
+            assertTrue(black(it, 150, 70))
+            assertFalse(black(it, 130, 150))
+            assertFalse(black(it, 260, 210))
+            it.recycle()
+        }
+        send(MotionEvent.ACTION_UP, 320f, 210f, 0.2f)
+        render().let {
+            assertTrue(black(it, 130, 150))
+            assertTrue(black(it, 260, 210))
+            assertFalse(black(it, 200, 180))
+            assertTrue(black(it, 150, 70))
+            it.recycle()
+        }
+        assertEquals(2, paper.completedStrokes)
+    }
+
+    @Test fun focusPauseDiscardsUnfinishedPressureCaptureBeforeAnotherStrokeCompletes() {
+        stroke(100f)
+        send(MotionEvent.ACTION_DOWN, 100f, 200f)
+        send(MotionEvent.ACTION_MOVE, 220f, 200f)
+        paper.pauseCurrentSystemStroke()
+        send(MotionEvent.ACTION_UP, 250f, 200f)
+        stroke(250f)
+        render().let {
+            assertTrue(black(it, 150, 100))
+            assertFalse(black(it, 150, 200))
+            assertTrue(black(it, 150, 250))
+            it.recycle()
+        }
+        assertEquals(2, paper.completedStrokes)
+    }
 }

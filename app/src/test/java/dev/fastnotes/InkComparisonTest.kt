@@ -79,7 +79,7 @@ class InkComparisonTest {
         return image.getPixel(150, 100)
     }
 
-    @Test fun unsupportedSystemModeExplainsTheBackendAndKeepsAndroidInkVisible() {
+    @Test fun softSolutionSystemSelectionRegistersAndCommitsCompletedInkAtPenUp() {
         val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible().windowFocusChanged(true)
         val activity = lifecycle.get()
         fun descendants(view: View): Sequence<View> = sequence {
@@ -90,21 +90,28 @@ class InkComparisonTest {
         root.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
         root.layout(0, 0, 400, 800)
+        val paper = descendants(root).filterIsInstance<InkTestView>().single()
         var connections = 0
+        val service = ActivitySystemInkBinder()
         val probe = SystemInkProbe({}, { SystemInkDevice("Viwoods AiPaper", "3.15.15", 33, "SoftSolution") },
-            { connections++; ActivitySystemInkBinder() })
+            {
+                // Test6's manual request registers before resetting the scratchpad to System mode.
+                assertFalse(paper.firmwareTest)
+                connections++; service
+            })
         InkTestActivity::class.java.getDeclaredField("systemProbe").apply { isAccessible = true }.set(activity, probe)
         descendants(root).filterIsInstance<Button>().single { it.text == "System ink" }.performClick()
-        assertEquals(0, connections)
+        assertEquals(1, connections)
         assertTrue(descendants(root).filterIsInstance<TextView>().any {
-            it.text.contains("unavailable on SoftSolution") && it.text.contains("Worker refresh")
+            it.text.contains("System ink requested")
         })
-        val paper = descendants(root).filterIsInstance<InkTestView>().single()
+        assertNotNull(service.region)
         paper.layout(0, 0, 400, 400)
-        assertFalse(paper.firmwareTest)
+        assertTrue(paper.firmwareTest)
         stroke(paper, complete = true)
         assertTrue(Color.red(pixel(paper)) < 80)
         lifecycle.pause().stop().destroy()
+        assertNull(service.region)
     }
 
     @Test fun firmwareTestHasNoAppDrawnInkUntilTheDocumentedQuietDelay() {
