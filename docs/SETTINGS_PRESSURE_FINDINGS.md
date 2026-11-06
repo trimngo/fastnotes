@@ -158,6 +158,12 @@ or the pressure curve of the earlier global firmware System preview.
 
 ## Scope of the next comparison
 
+The user reports test14's hesitation is gone and requests pressure restoration.
+Test15 uses the recovered normalization/logarithmic response with explicitly
+app-chosen 0.5–2 times nominal width bounds. It keeps the existing start and
+completed-frame ordering; [implementation scope and System options](INK_MODES_AND_PRESSURE.md).
+The missing resource presets and current slider values are still not claimed.
+
 The user clarified that the occasional delayed stroke is complete and the
 hesitation occurs after selecting a mode. This points the next comparison at
 startup ordering; it does not establish dropped input or an idle wake defect.

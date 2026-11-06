@@ -1,7 +1,15 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test14 prepares the scratchpad frame before native startup.**
+keeps notes offline. **0.3.2-test15 restores pressure in the working ink comparisons.**
+The user confirms test14's mode-selection hesitation has disappeared. Ink layers
+and Ink direct now use a shared pressure-aware renderer for live/completed ink,
+with a Pressure checkbox for comparison. The System selector separately tests
+prepared-screen startup and a full-display request, authorized even over Chrome.
+These are temporary scratchpad comparisons; normal notebook storage/defaults
+remain unchanged. See [mode differences, pressure and System options](docs/INK_MODES_AND_PRESSURE.md).
+
+Test14 prepared the scratchpad frame before native startup.
 The user confirms both test13 transparent modes draw live and feel similar;
 Ink layers may feel faster. An occasional first stroke appears completely after
 a delay just after selecting a mode. Transparent comparisons now finish their

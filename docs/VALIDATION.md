@@ -1,3 +1,48 @@
+# 0.3.2-test15 pressure and System comparison validation
+
+6 November 2026. The full verification command succeeded:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+**175 tests passed**, no failures, errors or skips. Lint has no errors (58 warnings
+and 1 hint); debug/release compile. The user reports test14's startup hesitation
+has disappeared; that prepared startup and completed-frame handoff are retained.
+
+Eight new pressure cases cover both transparent presentation policies, bounded
+monotonic response, light/heavy widths, same-position pressure changes,
+zero-pressure UP, live/completed geometry, clipping/exits, cancellation/eraser,
+fixed-width control and stale frames. Pressure is confined to scratch controller
+width lists; no note model/storage change or extra full-screen bitmap is added.
+The live transparent composite versus opaque replay fixture differs by at most
+2/255 per RGB channel, with identical alpha, due to compositing arithmetic.
+Only that comparison permits the measured rounding; rebuild checks stay exact.
+
+Eight new System/UI cases cover the original clipped/register-first request,
+prepared-frame ordering, rotated full-display bounds and exact removal, canceled
+starts, completed ink on resume, saved experiment selection, failed cleanup
+blocking mode/navigation/Back and pressure reselect. Fixture layout was corrected
+to match the actual test window: Spinner's queued layout legitimately cancels
+a preparation made against an artificial stale pane. No production geometry
+guard was relaxed to pass those checks.
+
+Pressure follows recovered Settings normalization/logarithmic response with
+app-selected width limits. OEM preset resources and the old System brush are not
+claimed. Full-display System drawing over Chrome is explicitly authorized, but
+outside-canvas ink is preview-only and new physical System behavior remains
+unverified. The two experiments change ordering and region separately, without
+new global flags. [Mode differences, evidence and limits](INK_MODES_AND_PRESSURE.md).
+
+APK identity:
+
+- `dev.fastnotes`, version `0.3.2-test15`, code 19; minimum API 29, target API 30
+- Bytes: `8020440`
+- SHA-256: `03380c5c534cf13ab0ba70ccfa6ad3ef085f2fc275aa5f77087b866713d4eb2b`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Same package, permissions and note format; install over the existing app
+
 # 0.3.2-test14 prepared startup validation
 
 6 November 2026. Full verification succeeded:

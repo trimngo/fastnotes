@@ -2,7 +2,14 @@
 
 Earlier native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
 
-Current positive baseline: test13 **Ink layers** and **Ink direct** both draw
+Current work: test14's mode-selection hesitation is reported gone. Test15
+[restores pressure and adds separate System comparisons](docs/INK_MODES_AND_PRESSURE.md).
+Pressure uses the same live/completed geometry; original System registration,
+prepared-screen ordering and full-display bounds are separate selectable tests.
+The user explicitly permits preview drawing over Chrome. Saved-note format and
+normal notebook defaults remain unchanged.
+
+Earlier positive baseline: test13 **Ink layers** and **Ink direct** both draw
 live; the user finds them similar, with Ink layers perhaps faster. The occasional
 first stroke appears completely after a delay **after selecting a mode**, not
 after an idle pause. Test14 orders the prepared Android frame before native

@@ -57,9 +57,15 @@ class ViwoodsPanel internal constructor(
     private val backgroundCopy = Paint().apply { blendMode = BlendMode.SRC }
     private var inkLayers = false
     private var frameHandoff = false
+    private var pressureInk = false
+    // Scratch-only widths. Note/InkPoint and the notebook's on-disk format stay unchanged.
+    // Each immutable list belongs to the same committed Stroke ID and point order.
+    private var pressureWidths: Map<Long, List<Float>> = emptyMap()
     private var completedRevision = 0L
     val bitmapDescription get() = if (inkLayers) "Transparent native ink layers" else "Opaque paper bitmap"
+    val pressureDescription get() = if (pressureInk) NativePressureProfile.DESCRIPTION else "Fixed-width ink"
     private val raster = PaperRasterizer()
+    private val pressureRaster = NativePressureRasterizer()
     private var page = Note()
     private var view = Viewport(1000f, 1, 1, 0f)
     private var screenBounds = Rect()
@@ -71,6 +77,9 @@ class ViwoodsPanel internal constructor(
     private var eraserRadius = 14f
     private val points = ArrayList<InkPoint>()
     private val pieces = ArrayList<List<InkPoint>>()
+    private val pointWidths = ArrayList<Float>()
+    private val pieceWidths = ArrayList<List<Float>>()
+    private var lastPressureWidth: Float? = null
     private val erased = HashSet<Long>()
     private val edits = ArrayList<NativeEdit>()
     private var strokeIsEraser = false
@@ -134,7 +143,7 @@ class ViwoodsPanel internal constructor(
 
     fun start(context: Context, source: Bitmap, note: Note, x: Int, y: Int,
               orientation: Int, erase: Boolean = false, visible: Rect? = null, inkLayers: Boolean = false,
-              frameHandoff: Boolean = false): Boolean {
+              frameHandoff: Boolean = false, pressureInk: Boolean = false): Boolean {
         stop()
         val report = availabilityReport()
         if (report != "Available") { status = report; return false }
@@ -146,6 +155,8 @@ class ViwoodsPanel internal constructor(
             synchronized(lock) {
                 this.inkLayers = inkLayers
                 this.frameHandoff = frameHandoff
+                this.pressureInk = pressureInk
+                pressureWidths = emptyMap()
                 completedRevision = 0
                 frame = source.copy(Bitmap.Config.ARGB_8888, true)
                 canvas = Canvas(frame!!)
@@ -166,6 +177,7 @@ class ViwoodsPanel internal constructor(
                 forceEraser = erase
                 eraserRadius = 14f * context.resources.displayMetrics.density / view.scale
                 points.clear(); pieces.clear(); erased.clear()
+                pointWidths.clear(); pieceWidths.clear(); lastPressureWidth = null
                 penDown = false; waitingForHandoff = false
                 dirty.setEmpty(); strokeDamage.setEmpty(); finalDamage.setEmpty(); recentDamage.clear()
                 scheduledAt = Long.MAX_VALUE; nextRefreshAt = 0; finalRefreshAt = Long.MAX_VALUE
@@ -240,14 +252,15 @@ class ViwoodsPanel internal constructor(
                         strokeIsEraser = forceEraser || type == MotionEvent.TOOL_TYPE_ERASER ||
                             buttons and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY) != 0
                         points.clear(); pieces.clear(); erased.clear()
+                        pointWidths.clear(); pieceWidths.clear(); lastPressureWidth = null
                         call("onWritingStart")
                         if (refreshPolicy == NativeRefreshPolicy.WORKER) call("setWritingEnabled", true)
                         call("setWritingJavaBitmap", displayFrame, orientation, screenBounds.left, screenBounds.top)
-                        append(x, y)
+                        append(x, y, pressure)
                     }
-                    MotionEvent.ACTION_MOVE -> if (penDown) append(x, y)
+                    MotionEvent.ACTION_MOVE -> if (penDown) append(x, y, pressure)
                     MotionEvent.ACTION_UP -> if (penDown) {
-                        append(x, y)
+                        append(x, y, pressure, preserveWidth = pressure <= 0)
                         finishLocked(false)
                     }
                     MotionEvent.ACTION_CANCEL -> if (penDown) finishLocked(true)
@@ -263,16 +276,30 @@ class ViwoodsPanel internal constructor(
     private fun inside(x: Float, y: Float) = x >= visibleLocal.left && y >= visibleLocal.top &&
         x < visibleLocal.right && y < visibleLocal.bottom
 
-    private fun append(x: Float, y: Float) {
+    private fun append(x: Float, y: Float, pressure: Int, preserveWidth: Boolean = false) {
         if (!inside(x, y)) {
-            if (!strokeIsEraser && points.isNotEmpty()) pieces.add(points.toList())
+            if (!strokeIsEraser && points.isNotEmpty()) {
+                pieces.add(points.toList())
+                if (pressureInk) pieceWidths.add(pointWidths.toList())
+            }
             points.clear()
+            pointWidths.clear()
             return
         }
         val point = view.document(x, y)
         val previous = points.lastOrNull() ?: point
-        if (point == previous && points.isNotEmpty()) return
+        val width = if (pressureInk && !strokeIsEraser) {
+            if (preserveWidth) lastPressureWidth ?: NativePressureProfile.width(pressure, page.penWidth)
+            else NativePressureProfile.width(pressure, page.penWidth)
+        } else page.penWidth
+        val previousWidth = pointWidths.lastOrNull() ?: width
+        if (point == previous && points.isNotEmpty() &&
+            (!pressureInk || strokeIsEraser || width == previousWidth)) return
         points.add(point)
+        if (pressureInk && !strokeIsEraser) {
+            pointWidths.add(width)
+            lastPressureWidth = width
+        }
         sampleCount++
         lastInkTime = SystemClock.uptimeMillis()
         if (strokeIsEraser) {
@@ -295,9 +322,17 @@ class ViwoodsPanel internal constructor(
         } else {
             val a = view.screen(previous)
             val b = view.screen(point)
-            val width = page.penWidth * view.scale
-            raster.segment(canvas!!, a, b, width)
-            val pad = ceil(width / 2f).toInt() + 4
+            val screenWidth = width * view.scale
+            val previousScreenWidth = previousWidth * view.scale
+            if (pressureInk) {
+                val target = canvas!!
+                val save = target.save()
+                try {
+                    target.clipRect(visibleLocal)
+                    pressureRaster.segment(target, a, b, previousScreenWidth, screenWidth)
+                } finally { target.restoreToCount(save) }
+            } else raster.segment(canvas!!, a, b, screenWidth)
+            val pad = ceil(max(screenWidth, previousScreenWidth) / 2f).toInt() + 4
             queueRender(Rect(floor(min(a.x, b.x)).toInt() - pad, floor(min(a.y, b.y)).toInt() - pad,
                 ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad))
         }
@@ -404,12 +439,23 @@ class ViwoodsPanel internal constructor(
         } else if (strokeIsEraser && erased.isNotEmpty()) {
             val ids = erased.toSet()
             page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
+            pressureWidths = pressureWidths.filterKeys { it !in ids }
             edits.add(NativeEdit.Erase(ids))
         } else if (!strokeIsEraser) {
-            val all = (pieces + listOf(points.toList())).filter { it.isNotEmpty() }
-                .map { Stroke(nextId++, page.penWidth, it) }
+            val all = ArrayList<Stroke>()
+            val newWidths = if (pressureInk) pressureWidths.toMutableMap() else null
+            val allPoints = pieces + listOf(points.toList())
+            val allWidths = if (pressureInk) pieceWidths + listOf(pointWidths.toList()) else emptyList()
+            for ((index, strokePoints) in allPoints.withIndex()) {
+                if (strokePoints.isEmpty()) continue
+                val widths = if (pressureInk) allWidths[index] else null
+                val stroke = Stroke(nextId++, widths?.maxOrNull() ?: page.penWidth, strokePoints)
+                all.add(stroke)
+                if (widths != null) newWidths!![stroke.id] = widths
+            }
             if (all.isNotEmpty()) {
                 page = page.copy(strokes = page.strokes + all)
+                if (newWidths != null) pressureWidths = newWidths.toMap()
                 edits.add(NativeEdit.Add(all))
             }
         }
@@ -419,6 +465,7 @@ class ViwoodsPanel internal constructor(
             scheduleRefresh()
         }
         points.clear(); pieces.clear(); erased.clear()
+        pointWidths.clear(); pieceWidths.clear(); lastPressureWidth = null
         completedRevision++
         waitingForHandoff = refreshPolicy == NativeRefreshPolicy.WORKER || frameHandoff
         if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK && !frameHandoff) {
@@ -448,6 +495,9 @@ class ViwoodsPanel internal constructor(
         }
     }
 
+    private data class CompletedSnapshot(val page: Note, val view: Viewport,
+        val widths: Map<Long, List<Float>>, val clip: Rect, val token: NativeCompletionToken)
+
     /**
      * Snapshot immutable completed vectors briefly, then rasterize outside the live input lock.
      * A private rasterizer avoids sharing mutable Paint state with the native callback thread.
@@ -455,11 +505,15 @@ class ViwoodsPanel internal constructor(
     internal fun drawCompleted(target: Canvas): NativeCompletionToken? {
         val snapshot = synchronized(lock) {
             if (!active) return null
-            Triple(page, view, NativeCompletionToken(generation, completedRevision))
+            CompletedSnapshot(page, view, pressureWidths, Rect(visibleLocal),
+                NativeCompletionToken(generation, completedRevision))
         }
-        PaperRasterizer().page(target, snapshot.first, snapshot.second)
+        val completedRaster = PaperRasterizer()
+        completedRaster.paper(target, snapshot.page, snapshot.view)
+        NativePressureRasterizer().ink(target, snapshot.page, snapshot.view, snapshot.widths,
+            snapshot.clip, completedRaster)
         return synchronized(lock) {
-            snapshot.third.takeIf { active && it.session == generation }
+            snapshot.token.takeIf { active && it.session == generation }
         }
     }
 
@@ -492,8 +546,8 @@ class ViwoodsPanel internal constructor(
     private fun redrawPage(excluded: Set<Long> = emptySet()) {
         if (inkLayers) {
             canvas!!.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            raster.ink(canvas!!, page, view, excluded)
-        } else raster.page(canvas!!, page, view, excluded)
+        } else raster.paper(canvas!!, page, view)
+        pressureRaster.ink(canvas!!, page, view, pressureWidths, visibleLocal, raster, excluded)
     }
 
     fun finish(cancel: Boolean) = synchronized(lock) { if (penDown) finishLocked(cancel) }
@@ -534,6 +588,8 @@ class ViwoodsPanel internal constructor(
         synchronized(lock) {
             frame = null; canvas = null; displayFrame = null; displayCanvas = null
             backgroundFrame = null; backgroundCanvas = null
+            pressureWidths = emptyMap()
+            pointWidths.clear(); pieceWidths.clear(); lastPressureWidth = null
         }
     }
 

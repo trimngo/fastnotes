@@ -1,5 +1,10 @@
 # Completed-frame handoff and direct ink comparison
 
+The user confirms test14 removed the mode-selection hesitation. Test15 keeps
+that startup ordering and [restores pressure in both transparent comparisons](INK_MODES_AND_PRESSURE.md).
+System preview remains under investigation through separate ordering/area
+comparisons rather than changing the working renderer's presentation policy.
+
 ## Test13 device result and test14 startup ordering
 
 The user confirms both transparent modes draw live and feel broadly similar;

@@ -99,7 +99,34 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: first stroke after mode selection (0.3.2-test14)
+## Current step: pressure and System comparisons (0.3.2-test15)
+
+The user confirms test14's startup hesitation has disappeared. Test15 restores
+pressure in the two working transparent comparisons while retaining that start
+ordering and completed-frame handoff.
+
+1. Update through **Ink Test → Updates → Check now**. Keep **Pressure** checked,
+   select **Ink layers**, and draw with light and heavier pressure. Compare the
+   line while moving and after lifting; its width profile should stay consistent.
+2. Check a first stroke promptly after selection and a few rapid strokes to look
+   for a startup/latency regression. Unchecking Pressure restarts that temporary
+   comparison with fixed width if a control is useful. Ink direct uses the same
+   pressure curve and remains available for comparison.
+3. For System ink, use the **System** selector then press **System ink**:
+   **Original** retains the usual request; **Prepared screen** changes only the
+   startup ordering; **Full display** changes only the requested area. Judge
+   ink while moving, not only completed Android replay after lifting.
+4. Full display may preview over Chrome/system areas, as authorized. The scratch
+   canvas cannot record outside-view strokes. Focus loss, pause or resize stops
+   the owned registration. Record the selected variant and Copy report after a
+   useful comparison; accepted registration is not proof of visible live ink.
+
+The pressure curve follows recovered Settings response math with app-chosen
+width bounds. It is not an exact OEM preset or recovery of the old System brush.
+Normal notebook defaults, stored notes and other firmware flags remain unchanged.
+See [mode/pressure explanation and limits](INK_MODES_AND_PRESSURE.md).
+
+## Earlier first-stroke check (0.3.2-test14)
 
 The user confirms both test13 transparent modes work and feel similar; Ink layers
 may feel faster. A delayed first stroke appears completely and follows mode

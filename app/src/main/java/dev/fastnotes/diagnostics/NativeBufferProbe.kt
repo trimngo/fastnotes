@@ -45,6 +45,7 @@ class NativeBufferProbe internal constructor(
         private set
     var onStrokeFinished: (() -> Unit)? = null
     var onFailure: (() -> Unit)? = null
+    var pressureEnabled = true
     val active get() = panel?.active == true
     val penDown get() = panel?.penDown == true
     val samples get() = panel?.sampleCount ?: 0
@@ -102,7 +103,8 @@ class NativeBufferProbe internal constructor(
             val clip = Rect(visible).apply { offset(-bufferBounds.left, -bufferBounds.top) }
             checkpoint("${mode.label}: calling native controller start")
             check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation,
-                visible = clip, inkLayers = mode.inkLayers, frameHandoff = mode.inkLayers))
+                visible = clip, inkLayers = mode.inkLayers, frameHandoff = mode.inkLayers,
+                pressureInk = mode.inkLayers && pressureEnabled))
             status = "${mode.label} requested. Live ink is unverified."
             checkpoint("${mode.label}: native controller returned; active=${engine.active}; mode=${engine.lastActiveMode}")
             true
@@ -148,6 +150,7 @@ class NativeBufferProbe internal constructor(
         append("Picture mode=${engine.lastActiveMode}; longest refresh call=${engine.maxRenderMicros} us; last call=${engine.failureStage}\n")
         append("Policy=${engine.refreshPolicy}; callback thread=${engine.lastCallbackThread}; render thread=${engine.lastRenderThread}; stroke-end thread=${engine.lastEndThread}\n")
         append("Bitmap=${engine.bitmapDescription}\n")
+        append("Pressure=${engine.pressureDescription}\n")
         append("${engine.status}. Call timing excludes visible panel latency.")
     } } ?: lastDetails
 
