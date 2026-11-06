@@ -2,11 +2,14 @@
 
 Earlier native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
 
-Current positive baseline: test12 **Ink layers** draws live according to the user.
-Next is [test13 handoff/latency](docs/FRAME_HANDOFF_AND_LATENCY.md), retaining fixed
-width while addressing completion gaps and comparing direct presentation. The
-earlier unbounded System preview and Settings pressure canvas remain research
-references; no global preview/pressure setting is changed.
+Current positive baseline: test13 **Ink layers** and **Ink direct** both draw
+live; the user finds them similar, with Ink layers perhaps faster. The occasional
+first stroke appears completely after a delay **after selecting a mode**, not
+after an idle pause. Test14 orders the prepared Android frame before native
+startup; [handoff/startup findings](docs/FRAME_HANDOFF_AND_LATENCY.md).
+The [installed Settings code](docs/SETTINGS_PRESSURE_FINDINGS.md) now supplies
+pressure math and a startup reference, with resource presets still absent.
+No global preview/pressure setting, sampling or firmware timer is changed.
 
 Test12 adds an isolated [Ink layers comparison](docs/INK_LAYERS_FINDINGS.md).
 The actual native compositor treats opaque near-white FE/FD pixels as commands;

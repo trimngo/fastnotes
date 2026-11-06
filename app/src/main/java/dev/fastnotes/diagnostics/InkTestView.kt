@@ -58,6 +58,25 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     @Volatile private var drawnSnapshotSerial = 0L
     private var handoffEpoch = 0L
     private var pendingHandoff: PendingHandoff? = null
+    private var preparationSerial = 0L
+    @Volatile private var drawnPreparationSerial = 0L
+    private var pendingPreparation: PendingPreparation? = null
+    private inner class PendingPreparation(val serial: Long, val onPrepared: () -> Unit) {
+        var registration: PreparationRegistration? = null
+        var software = false
+        var needsRegistration = false
+        var softwarePosted = false
+        val softwareCommit = Runnable { finishPreparationIfDrawn(this) }
+    }
+    private inner class PreparationRegistration(val preparation: PendingPreparation) {
+        val drawnAtCommit = AtomicLong(Long.MIN_VALUE)
+        var cancellation: (() -> Unit)? = null
+        val committedOnUi = Runnable { preparationCommitted(this) }
+        val committed = Runnable {
+            // A later UI draw cannot retroactively validate an earlier frame.
+            if (drawnAtCommit.compareAndSet(Long.MIN_VALUE, drawnPreparationSerial)) post(committedOnUi)
+        }
+    }
     private inner class PendingHandoff(val serial: Long, val epoch: Long, val acknowledge: () -> Unit) {
         var registration: FrameRegistration? = null
         var software = false
@@ -134,6 +153,15 @@ class InkTestView internal constructor(context: Context, private val frameCommit
         mode(true)
         captureNative = capture; nativePenDown = penDown; captureCompletedNative = completedCapture
     }
+    /** Submit the prepared paper before enabling native ink. This does not measure panel readiness. */
+    fun afterPreparedFrame(onPrepared: () -> Unit): () -> Unit {
+        cancelPendingPreparation()
+        val preparation = PendingPreparation(++preparationSerial, onPrepared)
+        pendingPreparation = preparation
+        registerPreparationFrame(preparation)
+        invalidate()
+        return { if (pendingPreparation === preparation) cancelPendingPreparation() }
+    }
     fun nativeStrokeFinished() {
         removeCallbacks(settle)
         val completedCapture = captureCompletedNative
@@ -157,6 +185,7 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     }
     fun clear() {
         removeCallbacks(settle)
+        cancelPendingPreparation()
         cancelPendingHandoff()
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         pressurePointCount = 0
@@ -176,11 +205,13 @@ class InkTestView internal constructor(context: Context, private val frameCommit
             snapshotWasDrawn = true
             drawnSnapshotSerial = snapshotSerial
             snapshotDrawn()
+            preparationDrawn()
             return
         }
         val count = if (firmwareTest) committed else completed.size
         for (index in 0 until count) completed[index].let { canvas.drawPath(it.path, if (it.pressureAware) pressureInk else ink) }
         if (!firmwareTest) current?.let { canvas.drawPath(it.path, ink) }
+        preparationDrawn()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -278,8 +309,67 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     }
 
     override fun onDetachedFromWindow() {
-        removeCallbacks(settle); cancelPendingHandoff(); discardSnapshot()
+        removeCallbacks(settle); cancelPendingPreparation(); cancelPendingHandoff(); discardSnapshot()
         super.onDetachedFromWindow()
+    }
+
+    private fun registerPreparationFrame(preparation: PendingPreparation) {
+        if (pendingPreparation !== preparation) return
+        preparation.needsRegistration = false
+        val registration = PreparationRegistration(preparation)
+        preparation.registration = registration
+        registration.cancellation = frameCommitter.register(this, registration.committed)
+        preparation.software = registration.cancellation == null
+    }
+
+    private fun preparationCommitted(registration: PreparationRegistration) {
+        val preparation = registration.preparation
+        if (pendingPreparation !== preparation || preparation.registration !== registration) return
+        registration.cancellation = null
+        if (registration.drawnAtCommit.get() >= preparation.serial) finishPreparationIfDrawn(preparation)
+        else {
+            preparation.registration = null
+            preparation.needsRegistration = true
+            if (isAttachedToWindow && isShown) {
+                registerPreparationFrame(preparation)
+                postInvalidateOnAnimation()
+            }
+        }
+    }
+
+    private fun preparationDrawn() {
+        val preparation = pendingPreparation ?: return
+        drawnPreparationSerial = preparation.serial
+        if (preparation.needsRegistration) {
+            registerPreparationFrame(preparation)
+            if (!preparation.software) postInvalidateOnAnimation()
+        }
+        if (preparation.software && !preparation.softwarePosted) {
+            preparation.softwarePosted = true
+            post(preparation.softwareCommit)
+        }
+    }
+
+    private fun finishPreparationIfDrawn(preparation: PendingPreparation) {
+        if (pendingPreparation !== preparation || drawnPreparationSerial < preparation.serial) return
+        pendingPreparation = null
+        preparation.registration?.let {
+            it.cancellation?.invoke()
+            removeCallbacks(it.committedOnUi)
+        }
+        removeCallbacks(preparation.softwareCommit)
+        preparation.onPrepared()
+    }
+
+    private fun cancelPendingPreparation() {
+        pendingPreparation?.let { preparation ->
+            preparation.registration?.let {
+                it.cancellation?.invoke()
+                removeCallbacks(it.committedOnUi)
+            }
+            removeCallbacks(preparation.softwareCommit)
+        }
+        pendingPreparation = null
     }
 
     private fun isCurrent(handoff: PendingHandoff) = pendingHandoff === handoff && handoff.epoch == handoffEpoch

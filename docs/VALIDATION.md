@@ -1,3 +1,45 @@
+# 0.3.2-test14 prepared startup validation
+
+6 November 2026. Full verification succeeded:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+**159 tests passed**, no failures, errors or skips. Lint has no errors (53 warnings
+and 1 hint); debug/release compile. Thirteen new cases verify fresh drawing and
+frame submission before native initialization, render-thread/UI ordering,
+replacement/explicit cancellation, clear/mode/detach, software fallback,
+offscreen preparation, focus/pause/resize cancellation, failed-start fallback
+and preserved opaque control ordering. Activity fixtures explicitly capture
+and fire framework frame-commit callbacks; manually drawing a software Canvas
+alone does not complete a hardware-accelerated View's preparation.
+
+The user's test13 result confirms both transparent comparisons draw live and
+feel similar, with Ink layers perhaps faster. Their occasional first stroke
+appears completely after a delay after selecting a mode. Test14 removes the
+unconditional scratchpad reset/redraw after enabling native ink. It establishes
+app draw/submission ordering, not physical panel readiness or a proven latency
+improvement. Completion, sampling, pressure width and native firmware calls remain
+unchanged. Independent review found no blocking lifecycle/cancellation issue.
+See [startup findings](FRAME_HANDOFF_AND_LATENCY.md).
+
+The corrected Settings exporter passed hosted checks on macOS and Ubuntu. The
+user supplied its successful 8,397,077-byte archive; all manifest/DEX inventory
+hashes matched. Static inspection recovered the conditional Rj bitmap callback
+renderer and steel-pen pressure formula, with preset resources/current slider
+values absent. No OEM code was executed or bundled. See
+[installed Settings evidence](SETTINGS_PRESSURE_FINDINGS.md).
+
+APK identity:
+
+- `dev.fastnotes`, version `0.3.2-test14`, code 18; minimum API 29, target API 30
+- Bytes: `7987672`
+- SHA-256: `178005a60f32dd79b5bef9c0025345bcbeab11f4185b35346dd6fea9b7245a9a`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Same package, permissions and note format; install over the existing app
+
 # Settings exporter macOS compatibility correction
 
 6 November 2026. The user's Mac stopped at the installed-APK path check with

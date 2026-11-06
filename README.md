@@ -1,7 +1,18 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test13 adds completed-frame handoff and Ink direct.**
+keeps notes offline. **0.3.2-test14 prepares the scratchpad frame before native startup.**
+The user confirms both test13 transparent modes draw live and feel similar;
+Ink layers may feel faster. An occasional first stroke appears completely after
+a delay just after selecting a mode. Transparent comparisons now finish their
+canvas reset and submit its Android frame before enabling native ink, removing
+the unconditional scratchpad repaint after native startup. This ordering does
+not establish physical panel readiness or a measured latency improvement.
+Use **Ink layers** as the current baseline; System ink still has no live result.
+The uploaded Settings code also exposes its pressure calculation, with preset
+resources still missing. See [Settings findings](docs/SETTINGS_PRESSURE_FINDINGS.md).
+
+Test13 added completed-frame handoff and Ink direct.
 The user reports test12 Ink layers draws live, but with extra latency and some
 disappearance/reappearance. Transparent modes now prepare completed ink at
 pen-up and wait for Android frame submission before ending native completion.

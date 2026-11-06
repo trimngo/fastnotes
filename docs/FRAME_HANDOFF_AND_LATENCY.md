@@ -1,5 +1,43 @@
 # Completed-frame handoff and direct ink comparison
 
+## Test13 device result and test14 startup ordering
+
+The user confirms both transparent modes draw live and feel broadly similar;
+Ink layers may feel faster. System ink still has no live preview. The remaining
+first-stroke hesitation eventually shows the complete stroke and occurs **after
+selecting a mode**, rather than after a pause without changing modes. This does
+not support treating dropped orphan MOVE events or idle wake-up as the cause.
+
+The diagnostic previously enabled native ink inside `nativeProbe.start`, then
+called `paper.nativeMode` (clear/invalidate) and changed the success prompt.
+Consequently its startup scratch reset was guaranteed to remain queued after
+native enablement. Test14 prepares that paper and prompt first. Both transparent
+modes wait for a fresh paper draw and corresponding Android frame submission
+before native initialization. There is no fixed delay. Opaque controls and the
+System probe retain their previous ordering.
+
+A distinct one-shot preparation serial rejects old render-thread/UI callbacks.
+Replacement, cancellation, clear/mode change and detach invalidate the token;
+the Activity also cancels on focus loss, pause or geometry change. Before starting
+it rechecks resumed state, focus, attachment, visibility and exact geometry. It
+does not reset the paper or change a success prompt after enabling native ink.
+Reports include frame-preparation and native-start call durations, explicitly
+excluding physical panel readiness and visible ink latency.
+
+This removes a concrete app ordering hazard. Button ripples and unrelated window
+updates remain possible; submission is not proof that the e-ink panel has settled.
+The cause of the user's delay and any physical improvement remain unverified.
+No orphan-MOVE recovery, jump-count change, keep-awake flag or idle timer is added.
+
+The [exact installed Settings export](SETTINGS_PRESSURE_FINDINGS.md) contains a
+bitmap callback renderer, pressure normalization and a logarithmic steel-pen
+width formula. Its fragment normally posts enabling 600 ms after setup, with
+other direct focus paths. That timer is reference behavior, not a timer to copy.
+Width preset resources and actual selected settings are absent. Test14 keeps
+the working fixed-width raster to isolate startup ordering.
+
+## Test12 baseline and test13 completion change
+
 6 November 2026. The user reports **test12 Ink layers draws live**, without
 pressure-sensitive width. They notice steady extra latency and occasional
 disappearance/reappearance. Fixed width is intentional in this comparison;
@@ -76,5 +114,6 @@ can increase pixel work. No unbounded/global drawing toggle is introduced.
 HandWritePolicy's stop/interception timer only clears drawing state; an inverse
 activation API has not been identified. WritingProducer's consumer is not fully
 represented in the current exports. The tablet's Pen and Gesture pressure test
-is a valuable additional reference. Its exact app code is not yet supplied;
-[the read-only Settings exporter](SETTINGS_CODE_EVIDENCE.md) prepares that evidence.
+is a valuable additional reference. Its [installed code is now supplied and
+inspected](SETTINGS_PRESSURE_FINDINGS.md); the [exporter](SETTINGS_CODE_EVIDENCE.md)
+remains available for reproducing that evidence.

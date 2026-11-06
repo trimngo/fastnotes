@@ -99,7 +99,28 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: completion and latency comparison (0.3.2-test13)
+## Current step: first stroke after mode selection (0.3.2-test14)
+
+The user confirms both test13 transparent modes work and feel similar; Ink layers
+may feel faster. A delayed first stroke appears completely and follows mode
+selection. Test14 submits the prepared scratchpad frame before native startup,
+without a fixed timer or changing sampling, pressure or completed-stroke handoff.
+
+1. Update in place through **Ink Test → Updates → Check now**.
+2. Select **Ink layers** and begin a short stroke promptly. Repeat mode selection
+   a few times and check whether that first stroke still hesitates.
+3. Keep the same mode selected, pause, then write again as a control. Also check
+   fast continuous strokes and ink staying visible after lifting.
+4. If the startup delay remains, **Copy report** after reproducing it. The new
+   Native startup line measures preparation/start calls, not physical latency.
+
+Ink direct remains available if Ink layers regresses. System ink is unchanged;
+there is no new System recovery claim or requirement to repeat it. Normal notebook
+defaults, stored notes and the fixed-width diagnostic pen remain unchanged.
+See [startup findings](FRAME_HANDOFF_AND_LATENCY.md) and
+[the installed Settings reference](SETTINGS_PRESSURE_FINDINGS.md).
+
+## Earlier completion and latency comparison (0.3.2-test13)
 
 The user reports live Ink layers works, but latency is noticeable during writing
 and completed ink sometimes disappears/reappears. The one-second diagnostic

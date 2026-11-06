@@ -467,6 +467,13 @@ class InkComparisonTest {
             root.layout(600, 0, 600 + width, 800)
             view.viewTreeObserver.dispatchOnPreDraw()
         }
+        fun submitPreparation(width: Int) {
+            layout(width)
+            val image = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            try { view.draw(Canvas(image)) } finally { image.recycle() }
+            takeInkTestFrameCallbacks(view).forEach(Runnable::run)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
         val fake = FakePanel.getInstance().apply { reset() }
         val probe = NativeBufferProbe(activity, {}) { mode ->
             ViwoodsPanel(FakePanel::class.java.name, mode.refreshPolicy) { ManualNativeInkScheduler() }
@@ -476,6 +483,8 @@ class InkComparisonTest {
             layout(600)
             val before = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
             start.performClick()
+            assertFalse(probe.active)
+            submitPreparation(600)
             assertTrue(probe.status, probe.active)
             assertEquals(android.graphics.Rect(0, 0, 1200, 800), fake.foregroundBounds)
             assertTrue(view.firmwareTest)
@@ -496,6 +505,7 @@ class InkComparisonTest {
             lifecycle.windowFocusChanged(true)
             assertFalse(probe.active)
             start.performClick()
+            submitPreparation(600)
             assertTrue(probe.active)
             assertFalse(noInk.isChecked)
             layout(360)
@@ -503,6 +513,7 @@ class InkComparisonTest {
             assertNull(fake.input)
             assertFalse(view.firmwareTest)
             start.performClick()
+            submitPreparation(360)
             assertTrue(probe.active)
             descendants(root).filterIsInstance<Button>().single { it.text == "Updates" }.performClick()
             assertFalse(probe.active)

@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
 import android.text.TextUtils
 import android.view.View
 import android.view.ViewGroup
@@ -35,6 +36,10 @@ class InkTestActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var observations: RadioGroup
     private data class Geometry(val canvas: Rect, val visible: Rect, val display: Rect, val orientation: Int, val rotation: Int)
+    private data class NativePreparation(val mode: NativeBufferMode, val geometry: Geometry, val selectedAt: Long)
+    private var nativePreparation: NativePreparation? = null
+    private var cancelNativePreparation: (() -> Unit)? = null
+    private var nativeStartup = "No prepared-frame native start requested."
     private var registeredGeometry: Geometry? = null
     private var lastDrawGeometry: Geometry? = null
     private var stableGeometry: Geometry? = null
@@ -51,6 +56,9 @@ class InkTestActivity : Activity() {
         val current = geometry()
         stableGeometry = current?.takeIf { it == lastDrawGeometry && !paper.isLayoutRequested }
         lastDrawGeometry = current
+        if (nativePreparation?.let { current != it.geometry } == true) {
+            stopTest("Pane changed; select a native test again.")
+        }
         if (registeredGeometry != null && current != registeredGeometry) {
             if (systemSelected) pauseSystemTest("System ink paused while the writing area changes.")
             else stopTest("Pane changed; select a native test again.")
@@ -155,10 +163,45 @@ class InkTestActivity : Activity() {
         modeLabel = mode.label
         resetObservation()
         val geometry = geometry()
-        if (geometry == null || !hasWindowFocus()) {
+        if (geometry == null || !resumed || !hasWindowFocus() || !paper.isShown) {
             status.text = "Tap this pane, then select the test again."
             return
         }
+        if (mode.inkLayers) {
+            // Finish the mode-selection reset before enabling the native overlay.
+            // Posting a Runnable alone would not establish draw/submission ordering.
+            paper.nativeMode(nativeProbe::capture, { nativeProbe.penDown }, nativeProbe::captureCompleted)
+            status.text = "${mode.label} selected. Write with the pen tip and check ink while moving."
+            val request = NativePreparation(mode, geometry, SystemClock.uptimeMillis())
+            nativePreparation = request
+            nativeStartup = "${mode.label}: waiting for the prepared Android frame; panel readiness is unverified."
+            cancelNativePreparation = paper.afterPreparedFrame {
+                if (nativePreparation !== request) return@afterPreparedFrame
+                nativePreparation = null
+                cancelNativePreparation = null
+                if (!resumed || !hasWindowFocus() || !paper.isAttachedToWindow || !paper.isShown ||
+                    paper.isLayoutRequested || this.geometry() != request.geometry) {
+                    nativeStartup = "${mode.label}: preparation canceled because the writing area changed."
+                    stopTest("Writing area changed; select a native test again.")
+                    return@afterPreparedFrame
+                }
+                val startAt = SystemClock.uptimeMillis()
+                if (nativeProbe.start(mode, geometry.canvas, geometry.visible, geometry.display, geometry.orientation)) {
+                    registeredGeometry = geometry
+                    nativeStartup = "${mode.label}: prepared frame submitted after ${startAt - request.selectedAt} ms; " +
+                        "native start returned in ${SystemClock.uptimeMillis() - startAt} ms. " +
+                        "App timings exclude physical panel readiness and visible ink latency."
+                    // Do not clear/invalidate paper or redraw a success prompt after enabling.
+                    log.event(nativeStartup)
+                } else {
+                    nativeStartup = "${mode.label}: native start failed after prepared frame submission."
+                    paper.mode(false)
+                    status.text = nativeProbe.status
+                }
+            }
+            return
+        }
+        // Opaque controls retain their previous ordering for comparison.
         if (nativeProbe.start(mode, geometry.canvas, geometry.visible, geometry.display, geometry.orientation)) {
             registeredGeometry = geometry
             paper.nativeMode(nativeProbe::capture, { nativeProbe.penDown },
@@ -247,6 +290,10 @@ class InkTestActivity : Activity() {
     private fun resetObservation() { observations.clearCheck(); observed = "Not recorded" }
 
     private fun stopTest(message: String, retainSystem: Boolean = false): Boolean {
+        if (nativePreparation != null) nativeStartup = "Native preparation canceled: $message"
+        nativePreparation = null
+        cancelNativePreparation?.invoke()
+        cancelNativePreparation = null
         if (!retainSystem) {
             systemSelected = false
             systemResumePending = false
@@ -304,6 +351,7 @@ class InkTestActivity : Activity() {
         append("System ink: ${systemProbe.status}\n")
         append("System selection: $systemSelected; waiting to resume: $systemResumePending; manual retry required: $systemStartFailed\n")
         append("Scratch handoff: ${paper.handoffDescription}\n")
+        append("Native startup: $nativeStartup\n")
         append("User observed ink while moving: $observed\n")
         append(stats()).append('\n')
         append("Native buffer details (last request):\n").append(nativeProbe.details()).append('\n')
@@ -345,6 +393,9 @@ class InkTestActivity : Activity() {
     override fun onDestroy() {
         resumed = false
         systemResumePending = false
+        nativePreparation = null
+        cancelNativePreparation?.invoke()
+        cancelNativePreparation = null
         paper.viewTreeObserver.removeOnPreDrawListener(geometryObserver)
         nativeProbe.stop()
         systemProbe.stop()

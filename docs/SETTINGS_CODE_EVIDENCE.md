@@ -41,6 +41,8 @@ passes with both that parser and mawk. Re-download the helper before retrying.
 Host fixtures cover missing activity fields, window-focus fallback, multi-DEX
 including classes10.dex, updated system APK paths, package/path validation,
 denied reads, size limits, private-data exclusion and output protection.
-A successful export from the physical tablet remains pending. If a different
-system app hosts this canvas, paste its component/error rather than changing the
-package restrictions blindly.
+The corrected exporter succeeded on the user's Mac. Its uploaded archive
+contains Settings 2.8.0 (code 233), all three DEX units and the manifest; all four
+inventory hashes match. See [installed-code findings](SETTINGS_PRESSURE_FINDINGS.md).
+If a different system app hosts this canvas, paste its component/error rather
+than changing the package restrictions blindly.
