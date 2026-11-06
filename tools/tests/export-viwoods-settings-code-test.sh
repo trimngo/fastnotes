@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host-only installed-code fixture. No tablet or network is used.
 set -eu
+test_bash=${BASH:-/bin/bash}
 base=$(cd "$(dirname "$0")/../.." && pwd)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/fastnotes-settings-test.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
@@ -16,7 +17,7 @@ printf 'NOT_INCLUDED_RESOURCES' > "$scratch/apk/resources.arsc"
 export FAKE_APK="$scratch/settings.apk"
 export FAKE_TRACE="$scratch/trace"
 cat > "$scratch/adb" <<'FAKE'
-#!/usr/bin/env bash
+#!/bin/bash
 set -eu
 [ "$1" = -d ] || exit 90
 shift
@@ -93,10 +94,10 @@ esac
 FAKE
 chmod +x "$scratch/adb"
 script="$base/tools/export-viwoods-settings-code.sh"
-bash -n "$script"
-ADB="$scratch/adb" bash "$script" --help > "$scratch/help"
+"$test_bash" -n "$script"
+ADB="$scratch/adb" "$test_bash" "$script" --help > "$scratch/help"
 started=$(date +%s)
-printf '\n' | ADB="$scratch/adb" bash "$script" --output "$scratch/settings-code.zip" > "$scratch/output"
+printf '\n' | ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/settings-code.zip" > "$scratch/output"
 elapsed=$(($(date +%s)-started))
 [ "$elapsed" -lt 8 ] || { echo 'Fast fixture unexpectedly waited for timer.' >&2; exit 1; }
 mkdir "$scratch/unpacked"
@@ -114,17 +115,22 @@ rg -q '^versionName=3.15.15$' "$scratch/unpacked/metadata.txt"
 if rg 'PRIVATE_(NOTE|SERIAL)_SENTINEL|NOT_INCLUDED_(NATIVE_CODE|RESOURCES)' "$scratch/unpacked" "$scratch/output"; then
     echo 'Private/non-code fixture data escaped code filtering.' >&2; exit 1
 fi
-if ADB="$scratch/adb" bash "$script" --output "$scratch/settings-code.zip" > /dev/null 2>&1; then
+if ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/settings-code.zip" > /dev/null 2>&1; then
     echo 'Existing archive was replaced.' >&2; exit 1
 fi
-printf '\n' | FAKE_PATH='/data/app/~~token==/com.wisky.setting.se01-hash==/base.apk' ADB="$scratch/adb" bash "$script" --output "$scratch/updated-code.zip" > /dev/null
-printf '\n' | FAKE_PACKAGE=com.android.settings ADB="$scratch/adb" bash "$script" --output "$scratch/android-code.zip" > /dev/null
+printf '\n' | FAKE_PATH='/data/app/~~token==/com.wisky.setting.se01-hash==/base.apk' ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/updated-code.zip" > /dev/null
+for apk_root in system system_ext product vendor odm; do
+    apk_path="/$apk_root/priv-app/Test_1-/Settings+@,~=.apk"
+    printf '\n' | FAKE_PATH="$apk_path" ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/path-$apk_root.zip" > /dev/null
+    unzip -p "$scratch/path-$apk_root.zip" metadata.txt | rg -Fq "apk_1_source=$apk_path"
+done
+printf '\n' | FAKE_PACKAGE=com.android.settings ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/android-code.zip" > /dev/null
 for style in resumed alternate; do
-    printf '\n' | FAKE_ACTIVITY_STYLE="$style" ADB="$scratch/adb" bash "$script" --output "$scratch/activity-$style.zip" > /dev/null
+    printf '\n' | FAKE_ACTIVITY_STYLE="$style" ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/activity-$style.zip" > /dev/null
     unzip -p "$scratch/activity-$style.zip" metadata.txt | rg -q '^component_source=activity$'
 done
 for style in current focused; do
-    printf '\n' | FAKE_ACTIVITY_STYLE=empty FAKE_WINDOW_STYLE="$style" ADB="$scratch/adb" bash "$script" --output "$scratch/window-$style.zip" > "$scratch/output-window-$style"
+    printf '\n' | FAKE_ACTIVITY_STYLE=empty FAKE_WINDOW_STYLE="$style" ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/window-$style.zip" > "$scratch/output-window-$style"
     mkdir "$scratch/window-$style"
     unzip -q "$scratch/window-$style.zip" -d "$scratch/window-$style"
     rg -q '^component=com.wisky.setting.se01/.PenGestureCanvas$' "$scratch/window-$style/metadata.txt"
@@ -136,7 +142,7 @@ expect_failure() {
     local name=$1
     shift
     : > "$scratch/trace-$name"
-    if printf '\n' | env FAKE_TRACE="$scratch/trace-$name" "$@" ADB="$scratch/adb" bash "$script" --output "$scratch/$name.zip" > "$scratch/error-$name" 2>&1; then
+    if printf '\n' | env FAKE_TRACE="$scratch/trace-$name" "$@" ADB="$scratch/adb" "$test_bash" "$script" --output "$scratch/$name.zip" > "$scratch/error-$name" 2>&1; then
         echo "Unexpected success for $name" >&2; exit 1
     fi
     [ ! -e "$scratch/$name.zip" ]
@@ -148,10 +154,19 @@ expect_failure foreign_focus FAKE_ACTIVITY_STYLE=empty FAKE_WINDOW_STYLE=foreign
 expect_failure non_system FAKE_NOT_SYSTEM=yes
 expect_failure private_path FAKE_PATH=/data/user/0/com.wisky.setting.se01/private.apk
 expect_failure traversal FAKE_PATH=/data/app/../../data/user/0/private.apk
+expect_failure dot_path FAKE_PATH=/system/./priv-app/Settings.apk
+expect_failure root_prefix FAKE_PATH=/systematic/priv-app/Settings.apk
+expect_failure app_prefix FAKE_PATH=/data/app-private/com.wisky.setting.se01/base.apk
+expect_failure wrong_extension FAKE_PATH=/system/priv-app/Settings/Settings.apk.bak
+expect_failure path_space 'FAKE_PATH=/system/priv-app/Settings Dir/Settings.apk'
+expect_failure path_dollar 'FAKE_PATH=/system/priv-app/$Settings/Settings.apk'
+expect_failure path_backtick 'FAKE_PATH=/system/priv-app/`id`/Settings.apk'
+expect_failure path_semicolon 'FAKE_PATH=/system/priv-app/Settings;id/Settings.apk'
+expect_failure path_glob 'FAKE_PATH=/system/priv-app/Settings*/Settings.apk'
 expect_failure budget FAKE_SIZE=268435457
 expect_failure unauthorized FAKE_UNAUTHORIZED=yes
 expect_failure read_denied FAKE_PULL_FAIL=yes
-for name in foreground no_foreground foreign_focus non_system private_path traversal budget unauthorized; do
+for name in foreground no_foreground foreign_focus non_system private_path traversal dot_path root_prefix app_prefix wrong_extension path_space path_dollar path_backtick path_semicolon path_glob budget unauthorized; do
     if rg -q '^pull ' "$scratch/trace-$name"; then
         echo "Read happened before $name validation" >&2; exit 1
     fi

@@ -1,0 +1,35 @@
+name: Settings exporter checks
+on:
+  push:
+    paths:
+      - tools/export-viwoods-settings-code.sh
+      - tools/tests/export-viwoods-settings-code-test.sh
+      - .github/workflows/settings-exporter.yml
+  pull_request:
+    paths:
+      - tools/export-viwoods-settings-code.sh
+      - tools/tests/export-viwoods-settings-code-test.sh
+      - .github/workflows/settings-exporter.yml
+permissions:
+  contents: read
+jobs:
+  fixture:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure ripgrep is available
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            if [ "$RUNNER_OS" = macOS ]; then
+              brew install ripgrep
+            else
+              sudo apt-get update
+              sudo apt-get install -y ripgrep
+            fi
+          fi
+      - name: Check with the system Bash and awk
+        run: PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH" /bin/bash tools/tests/export-viwoods-settings-code-test.sh

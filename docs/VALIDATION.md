@@ -1,3 +1,17 @@
+# Settings exporter macOS compatibility correction
+
+6 November 2026. The user's Mac stopped at the installed-APK path check with
+`awk: nonterminated character class`, before any APK read. The regex literal
+contained an unescaped slash in a bracket expression: mawk accepted it, while
+One True Awk 20220912 reproduced the exact failure. A string-valued ERE now keeps
+the same allowed locations/characters without that delimiter ambiguity.
+
+The full exporter host fixture passes with mawk and One True Awk, including
+allowed install paths, rejected private/traversal/metacharacter paths, foreground
+fallback, read budgets, code-only output and failed reads. Bash syntax and diff
+checks pass. A successful physical-device export remains pending. No Android
+application source or APK changed; test13's app checks below remain applicable.
+
 # 0.3.2-test13 completed-frame handoff validation
 
 6 November 2026. Full verification succeeded:

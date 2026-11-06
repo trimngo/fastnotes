@@ -154,8 +154,10 @@ while IFS= read -r item; do
     case "$item" in package:/*) remote=${item#package:} ;; *) echo 'Unexpected APK path response; nothing exported.' >&2; exit 1 ;; esac
     case "$remote" in */../*|*/./*) echo 'An APK source path contained traversal; nothing exported.' >&2; exit 1 ;; esac
     # Exclude app-data paths and shell metacharacters. APK paths can include base64-like install tokens.
+    # Use a string ERE: macOS awk treats an unescaped slash inside a regex
+    # literal's bracket expression as the closing delimiter (mawk accepts it).
     if ! printf '%s\n' "$remote" | awk '
-        /^\/(system|system_ext|product|vendor|odm|data\/app)\/[A-Za-z0-9_./=+@,~-]+\.apk$/ {ok=1}
+        $0 ~ "^/(system|system_ext|product|vendor|odm|data/app)/[-A-Za-z0-9_./=+@,~]+[.]apk$" {ok=1}
         END {exit !ok}'; then
         echo 'An APK source path was outside the permitted installed-code locations.' >&2; exit 1
     fi
