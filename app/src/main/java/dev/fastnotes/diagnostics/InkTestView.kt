@@ -10,10 +10,27 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.hypot
 
+/** Returns cancellation for a hardware frame callback, or null for software drawing. */
+internal fun interface InkFrameCommitter {
+    fun register(view: View, callback: Runnable): (() -> Unit)?
+}
+
+private object AndroidInkFrameCommitter : InkFrameCommitter {
+    override fun register(view: View, callback: Runnable): (() -> Unit)? {
+        if (!view.isHardwareAccelerated) return null
+        val observer = view.viewTreeObserver
+        if (!observer.isAlive) return null
+        observer.registerFrameCommitCallback(callback)
+        return { if (observer.isAlive) observer.unregisterFrameCommitCallback(callback) }
+    }
+}
+
 /** Temporary scratch strokes only. This view never opens a sheet or uses NoteStore. */
-class InkTestView(context: Context) : View(context) {
+class InkTestView internal constructor(context: Context, private val frameCommitter: InkFrameCommitter) : View(context) {
+    constructor(context: Context) : this(context, AndroidInkFrameCommitter)
     private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 3f
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
@@ -33,8 +50,31 @@ class InkTestView(context: Context) : View(context) {
     private val pressureStarts = BooleanArray(MAX_SAMPLES)
     private var pressurePointCount = 0
     private var nativeSnapshot: Bitmap? = null
+    private var snapshotWasDrawn = false
     private var captureNative: ((Canvas) -> Boolean)? = null
     private var nativePenDown: (() -> Boolean)? = null
+    private var captureCompletedNative: ((Canvas) -> (() -> Unit)?)? = null
+    private var snapshotSerial = 0L
+    @Volatile private var drawnSnapshotSerial = 0L
+    private var handoffEpoch = 0L
+    private var pendingHandoff: PendingHandoff? = null
+    private inner class PendingHandoff(val serial: Long, val epoch: Long, val acknowledge: () -> Unit) {
+        var registration: FrameRegistration? = null
+        var software = false
+        var needsRegistration = false
+        var softwarePosted = false
+        val softwareCommit = Runnable { finishHandoffIfDrawn(this) }
+    }
+    private inner class FrameRegistration(val handoff: PendingHandoff) {
+        val drawnAtCommit = AtomicLong(Long.MIN_VALUE)
+        var cancellation: (() -> Unit)? = null
+        val committedOnUi = Runnable { frameCommitted(this) }
+        // Record what had actually been drawn when that frame committed, before
+        // marshalling from the render thread. A later UI draw cannot validate it.
+        val committed = Runnable {
+            if (drawnAtCommit.compareAndSet(Long.MIN_VALUE, drawnSnapshotSerial)) post(committedOnUi)
+        }
+    }
     var firmwareTest = false
         private set
     private var systemHandoff = false
@@ -44,6 +84,7 @@ class InkTestView(context: Context) : View(context) {
     private var maxPressure = 0f
     val handoffDescription get() = if (systemHandoff)
         "Completed strokes at pen-up; pressure-aware replay built at pen-up, estimated 2–8 px; native curve unverified"
+        else if (captureCompletedNative != null) "Completed native ink at pen-up; handoff after Android frame submission"
         else if (firmwareTest) "App ink after one second of quiet" else "Android live drawing"
     val pressureSummary get() = if (pressureSamples == 0L) "none" else
         String.format(Locale.ROOT, "%d normalized samples, %.3f–%.3f", pressureSamples, minPressure, maxPressure)
@@ -60,8 +101,7 @@ class InkTestView(context: Context) : View(context) {
                 // a new native stroke early and masquerade as firmware presentation.
                 val image = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
                 if (capture(Canvas(image))) {
-                    nativeSnapshot?.recycle()
-                    nativeSnapshot = image
+                    replaceSnapshot(image)
                 } else {
                     image.recycle()
                     // A new native sample may have arrived between the UI guard and the
@@ -75,7 +115,7 @@ class InkTestView(context: Context) : View(context) {
     }
 
     fun mode(firmware: Boolean) {
-        captureNative = null; nativePenDown = null
+        captureNative = null; nativePenDown = null; captureCompletedNative = null
         systemHandoff = false
         clear(); firmwareTest = firmware
     }
@@ -89,18 +129,40 @@ class InkTestView(context: Context) : View(context) {
         committed = completed.size
         invalidate()
     }
-    fun nativeMode(capture: (Canvas) -> Boolean, penDown: () -> Boolean) {
+    fun nativeMode(capture: (Canvas) -> Boolean, penDown: () -> Boolean,
+                   completedCapture: ((Canvas) -> (() -> Unit)?)? = null) {
         mode(true)
-        captureNative = capture; nativePenDown = penDown
+        captureNative = capture; nativePenDown = penDown; captureCompletedNative = completedCapture
     }
-    fun nativeStrokeFinished() { removeCallbacks(settle); postDelayed(settle, 1000) }
+    fun nativeStrokeFinished() {
+        removeCallbacks(settle)
+        val completedCapture = captureCompletedNative
+        if (completedCapture == null) { postDelayed(settle, 1000); return }
+        val image = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        val acknowledge = try { completedCapture(Canvas(image)) } catch (failure: Throwable) {
+            image.recycle()
+            throw failure
+        }
+        if (acknowledge == null) { image.recycle(); return }
+        cancelPendingHandoff()
+        replaceSnapshot(image)
+        snapshotSerial++
+        committed = completed.size
+        val handoff = PendingHandoff(snapshotSerial, handoffEpoch, acknowledge)
+        pendingHandoff = handoff
+        // Register before invalidation: registration from onDraw can miss that frame.
+        registerFrame(handoff)
+        invalidate()
+        onStrokeFinished?.invoke()
+    }
     fun clear() {
         removeCallbacks(settle)
+        cancelPendingHandoff()
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         pressurePointCount = 0
         samples = 0; maxEventAgeMs = 0
         pressureSamples = 0; minPressure = 0f; maxPressure = 0f
-        nativeSnapshot?.recycle(); nativeSnapshot = null
+        discardSnapshot()
         invalidate()
     }
 
@@ -109,7 +171,13 @@ class InkTestView(context: Context) : View(context) {
         val spacing = 48 * resources.displayMetrics.density
         var y = spacing
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, lines); y += spacing }
-        nativeSnapshot?.let { canvas.drawBitmap(it, 0f, 0f, null); return }
+        nativeSnapshot?.let {
+            canvas.drawBitmap(it, 0f, 0f, null)
+            snapshotWasDrawn = true
+            drawnSnapshotSerial = snapshotSerial
+            snapshotDrawn()
+            return
+        }
         val count = if (firmwareTest) committed else completed.size
         for (index in 0 until count) completed[index].let { canvas.drawPath(it.path, if (it.pressureAware) pressureInk else ink) }
         if (!firmwareTest) current?.let { canvas.drawPath(it.path, ink) }
@@ -148,11 +216,12 @@ class InkTestView(context: Context) : View(context) {
                 committed = completed.size
                 invalidate()
                 onStrokeFinished?.invoke()
-            } else if (firmwareTest) postDelayed(settle, 1000)
+            } else if (firmwareTest && captureCompletedNative == null) postDelayed(settle, 1000)
             else { invalidate(); onStrokeFinished?.invoke() }
         } else if (action == MotionEvent.ACTION_CANCEL) {
             current = null; pointer = -1; inside = false; pressurePointCount = 0
-            if (systemHandoff || !firmwareTest) invalidate() else postDelayed(settle, 1000)
+            if (systemHandoff || !firmwareTest || captureCompletedNative != null) invalidate()
+            else postDelayed(settle, 1000)
         }
         return true
     }
@@ -209,8 +278,86 @@ class InkTestView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
-        removeCallbacks(settle); nativeSnapshot?.recycle(); nativeSnapshot = null
+        removeCallbacks(settle); cancelPendingHandoff(); discardSnapshot()
         super.onDetachedFromWindow()
+    }
+
+    private fun isCurrent(handoff: PendingHandoff) = pendingHandoff === handoff && handoff.epoch == handoffEpoch
+
+    private fun discardSnapshot() {
+        // A displayed bitmap can still be held by a hardware display list. Android/GC
+        // retires it safely; an image never drawn can be released immediately.
+        if (!snapshotWasDrawn) nativeSnapshot?.recycle()
+        nativeSnapshot = null
+        snapshotWasDrawn = false
+    }
+
+    private fun replaceSnapshot(image: Bitmap) {
+        discardSnapshot()
+        nativeSnapshot = image
+    }
+
+    private fun registerFrame(handoff: PendingHandoff) {
+        if (!isCurrent(handoff)) return
+        handoff.needsRegistration = false
+        val registration = FrameRegistration(handoff)
+        handoff.registration = registration
+        registration.cancellation = frameCommitter.register(this, registration.committed)
+        handoff.software = registration.cancellation == null
+    }
+
+    private fun frameCommitted(registration: FrameRegistration) {
+        val handoff = registration.handoff
+        if (!isCurrent(handoff) || handoff.registration !== registration) return
+        registration.cancellation = null // This one-shot callback has already fired.
+        if (registration.drawnAtCommit.get() >= handoff.serial) finishHandoffIfDrawn(handoff)
+        else {
+            // A frame without this snapshot cannot release native ink. Re-register
+            // for one further frame, or wait for a draw while offscreen.
+            handoff.registration = null
+            handoff.needsRegistration = true
+            if (isAttachedToWindow && isShown) {
+                registerFrame(handoff)
+                postInvalidateOnAnimation()
+            }
+        }
+    }
+
+    private fun snapshotDrawn() {
+        val handoff = pendingHandoff ?: return
+        if (!isCurrent(handoff) || drawnSnapshotSerial < handoff.serial) return
+        if (handoff.needsRegistration) {
+            registerFrame(handoff)
+            if (!handoff.software) postInvalidateOnAnimation()
+        }
+        if (handoff.software && !handoff.softwarePosted) {
+            handoff.softwarePosted = true
+            // Software ViewRoot posts its buffer after drawing returns.
+            post(handoff.softwareCommit)
+        }
+    }
+
+    private fun finishHandoffIfDrawn(handoff: PendingHandoff) {
+        if (!isCurrent(handoff) || drawnSnapshotSerial < handoff.serial) return
+        pendingHandoff = null
+        handoff.registration?.let {
+            it.cancellation?.invoke()
+            removeCallbacks(it.committedOnUi)
+        }
+        removeCallbacks(handoff.softwareCommit)
+        handoff.acknowledge()
+    }
+
+    private fun cancelPendingHandoff() {
+        handoffEpoch++
+        pendingHandoff?.let { handoff ->
+            handoff.registration?.let {
+                it.cancellation?.invoke()
+                removeCallbacks(it.committedOnUi)
+            }
+            removeCallbacks(handoff.softwareCommit)
+        }
+        pendingHandoff = null
     }
 
     private companion object {

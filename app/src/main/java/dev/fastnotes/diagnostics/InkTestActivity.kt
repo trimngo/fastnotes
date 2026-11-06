@@ -103,11 +103,11 @@ class InkTestActivity : Activity() {
         row("Android pen" to {
             if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
         }, "System ink" to { startSystemTest() }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) },
-            "Reference callback" to { startNativeTest(NativeBufferMode.REFERENCE_CALLBACK) },
+            "Ink direct" to { startNativeTest(NativeBufferMode.INK_DIRECT) },
             "Ink layers" to { startNativeTest(NativeBufferMode.INK_LAYERS) })
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. Compare Ink layers with Worker refresh using fast pen strokes. Watch ink while moving; both show an Android snapshot one second after pen-up. Use the pen tip for the new comparison. System ink remains a separate firmware request."
+            text = "Temporary scratchpad. Compare Ink layers with Ink direct using the pen tip. Watch ink while moving, then check it stays visible after lifting. Completed ink is handed over after an Android frame. Worker refresh keeps its earlier one-second snapshot delay."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -161,7 +161,8 @@ class InkTestActivity : Activity() {
         }
         if (nativeProbe.start(mode, geometry.canvas, geometry.visible, geometry.display, geometry.orientation)) {
             registeredGeometry = geometry
-            paper.nativeMode(nativeProbe::capture) { nativeProbe.penDown }
+            paper.nativeMode(nativeProbe::capture, { nativeProbe.penDown },
+                if (mode.inkLayers) nativeProbe::captureCompleted else null)
             status.text = "${mode.label} requested. Look for complete ink while moving, then record the result."
         } else status.text = nativeProbe.status
     }

@@ -12,8 +12,16 @@ import dev.fastnotes.ink.NativeRefreshPolicy
 import dev.fastnotes.model.Note
 import dev.fastnotes.model.Viewport
 
-enum class NativeBufferMode(val label: String) {
-    PANE("Native pane"), DISPLAY("Worker refresh"), REFERENCE_CALLBACK("Reference callback"), INK_LAYERS("Ink layers")
+enum class NativeBufferMode(
+    val label: String,
+    val refreshPolicy: NativeRefreshPolicy = NativeRefreshPolicy.WORKER,
+    val inkLayers: Boolean = false
+) {
+    PANE("Native pane"),
+    DISPLAY("Worker refresh"),
+    REFERENCE_CALLBACK("Reference callback", NativeRefreshPolicy.REFERENCE_CALLBACK),
+    INK_LAYERS("Ink layers", inkLayers = true),
+    INK_DIRECT("Ink direct", NativeRefreshPolicy.REFERENCE_CALLBACK, inkLayers = true)
 }
 
 /** Temporary geometry/execution comparisons; live performance requires a user observation. */
@@ -23,7 +31,7 @@ class NativeBufferProbe internal constructor(
     private val panelFactory: (NativeBufferMode) -> ViwoodsPanel
 ) {
     constructor(context: Context, checkpoint: (String) -> Unit = {}) : this(context, checkpoint, { mode ->
-        ViwoodsPanel(policy = if (mode == NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER)
+        ViwoodsPanel(policy = mode.refreshPolicy)
     })
     private val main = Handler(Looper.getMainLooper())
     private var panel: ViwoodsPanel? = null
@@ -64,7 +72,7 @@ class NativeBufferProbe internal constructor(
                 scrollY = (bufferBounds.top - canvas.top).toFloat())
             val raster = PaperRasterizer()
             val viewport = Viewport(note.pageWidth, width, height, note.scrollY)
-            if (mode == NativeBufferMode.INK_LAYERS) raster.ink(Canvas(source), note, viewport)
+            if (mode.inkLayers) raster.ink(Canvas(source), note, viewport)
             else raster.page(Canvas(source), note, viewport)
             val engine = panelFactory(mode)
             panel = engine
@@ -74,7 +82,10 @@ class NativeBufferProbe internal constructor(
                 main.post {
                     if (panel === engine && engine.active) {
                         engine.drainEdits()
-                        engine.acknowledge()
+                        // Transparent modes keep native completion visible until the View has
+                        // submitted its completed-only frame. Headless/legacy callers retain
+                        // their immediate acknowledgement instead of stranding the session.
+                        if (!mode.inkLayers || onStrokeFinished == null) engine.acknowledge()
                         onStrokeFinished?.invoke()
                     }
                 }
@@ -91,7 +102,7 @@ class NativeBufferProbe internal constructor(
             val clip = Rect(visible).apply { offset(-bufferBounds.left, -bufferBounds.top) }
             checkpoint("${mode.label}: calling native controller start")
             check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation,
-                visible = clip, inkLayers = mode == NativeBufferMode.INK_LAYERS))
+                visible = clip, inkLayers = mode.inkLayers, frameHandoff = mode.inkLayers))
             status = "${mode.label} requested. Live ink is unverified."
             checkpoint("${mode.label}: native controller returned; active=${engine.active}; mode=${engine.lastActiveMode}")
             true
@@ -112,6 +123,22 @@ class NativeBufferProbe internal constructor(
             target.translate((bufferBounds.left - canvasBounds.left).toFloat(), (bufferBounds.top - canvasBounds.top).toFloat())
             engine.drawPreview(target, quietMs = 1000)
         } finally { target.restoreToCount(save) }
+    }
+
+    /** Returns the acknowledgement for exactly the completed-only image just captured. */
+    fun captureCompleted(target: Canvas): (() -> Unit)? {
+        val engine = panel ?: return null
+        if (mode?.inkLayers != true) return null
+        val save = target.save()
+        val token = try {
+            target.translate((bufferBounds.left - canvasBounds.left).toFloat(),
+                (bufferBounds.top - canvasBounds.top).toFloat())
+            engine.drawCompleted(target)
+        } finally { target.restoreToCount(save) }
+        if (token == null || panel !== engine || !engine.active) return null
+        return {
+            if (panel === engine && engine.active) engine.acknowledge(token)
+        }
     }
 
     fun details(): String = panel?.let { engine -> buildString {

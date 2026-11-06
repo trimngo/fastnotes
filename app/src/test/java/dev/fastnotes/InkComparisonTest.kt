@@ -239,7 +239,7 @@ class InkComparisonTest {
             assertEquals(failedRemovals + 1, service.removes)
             repeat(4) { paper.viewTreeObserver.dispatchOnPreDraw() }
             assertEquals(failedRemovals + 1, service.removes)
-            for (label in listOf("Android pen", "Worker refresh", "Reference callback", "Updates", "API files", "System ink")) {
+            for (label in listOf("Android pen", "Worker refresh", "Ink direct", "Ink layers", "Updates", "API files", "System ink")) {
                 button(label).performClick()
                 assertTrue(probe.hasRegistration)
                 assertTrue(paper.firmwareTest)
@@ -458,7 +458,7 @@ class InkComparisonTest {
             if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))
         }
         val view = descendants(root).filterIsInstance<InkTestView>().single()
-        val start = descendants(root).filterIsInstance<Button>().single { it.text == "Reference callback" }
+        val start = descendants(root).filterIsInstance<Button>().single { it.text == "Ink direct" }
         val noInk = descendants(root).filterIsInstance<RadioButton>().single { it.text == "No live ink" }
         val copy = descendants(root).filterIsInstance<Button>().single { it.text == "Copy report" }
         fun layout(width: Int) {
@@ -469,8 +469,7 @@ class InkComparisonTest {
         }
         val fake = FakePanel.getInstance().apply { reset() }
         val probe = NativeBufferProbe(activity, {}) { mode ->
-            val policy = if (mode == dev.fastnotes.diagnostics.NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER
-            ViwoodsPanel(FakePanel::class.java.name, policy) { ManualNativeInkScheduler() }
+            ViwoodsPanel(FakePanel::class.java.name, mode.refreshPolicy) { ManualNativeInkScheduler() }
         }.apply { onStrokeFinished = { view.nativeStrokeFinished() } }
         InkTestActivity::class.java.getDeclaredField("nativeProbe").apply { isAccessible = true }.set(activity, probe)
         try {
@@ -489,7 +488,7 @@ class InkComparisonTest {
             copy.performClick()
             val report = activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
             assertTrue(report.contains("User observed ink while moving: No live ink"))
-            assertTrue(report.contains("Reference callback: 1200x800 at 0,0"))
+            assertTrue(report.contains("Ink direct: 1200x800 at 0,0"))
 
             lifecycle.windowFocusChanged(false)
             assertFalse(probe.active)

@@ -1,14 +1,23 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test12 adds the Ink layers native comparison.**
+keeps notes offline. **0.3.2-test13 adds completed-frame handoff and Ink direct.**
+The user reports test12 Ink layers draws live, but with extra latency and some
+disappearance/reappearance. Transparent modes now prepare completed ink at
+pen-up and wait for Android frame submission before ending native completion.
+The optional **Ink direct** comparison uses the same transparent format on the
+pen callback thread. It can reduce app queueing but may block input if native
+presentation is slow, so the worker-based **Ink layers** remains available.
+Pen width remains fixed. See [handoff and latency findings](docs/FRAME_HANDOFF_AND_LATENCY.md).
+
+Test12 introduced the Ink layers native comparison.
 The selected compositor reserves near-white FE/FD pixel values as drawing
 commands; Fastnotes' opaque antialiasing naturally produces them in a software
 test. The new explicit mode uses transparent native ink layers with the same
 worker scheduling, avoiding those reserved colours in the tested raster.
-Use **Fastnotes Ink Test → Ink layers** with the pen tip, judge ink while moving,
-and compare Worker refresh. Physical improvement is unverified; notebook defaults
-are unchanged. See [pixel-contract findings](docs/INK_LAYERS_FINDINGS.md).
+The user confirms live Ink layers works on the tablet; its remaining latency and
+continuity issues motivate test13. Notebook defaults are unchanged.
+See [pixel-contract findings](docs/INK_LAYERS_FINDINGS.md).
 
 Test11 restored the earlier System ink option.
 The user reports both test11 and the actual original test6 still have no live
@@ -59,7 +68,7 @@ See [native pressure/latency findings](docs/NATIVE_INK_FINDINGS.md),
 - Device details includes native startup/visibility/timing diagnostics and private
   crash/Android process-exit evidence without note contents or exception messages.
 - **Settings → Ink comparison test** opens a temporary scratch canvas in a separate
-  process. It offers Android pen, System ink, Worker refresh and Reference callback.
+  process. It offers Android pen, System ink, Worker refresh, Ink layers and Ink direct.
   System ink remains an explicit scoped probe on SoftSolution; backend names
   are diagnostic and do not determine the user's observed live result.
   System ink uses an exact firmware-pinned service protocol to register only the

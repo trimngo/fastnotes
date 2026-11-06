@@ -22,6 +22,9 @@ sealed interface NativeEdit {
 
 enum class NativeRefreshPolicy { WORKER, REFERENCE_CALLBACK }
 
+/** A completed image can release only the native session/revision it actually contains. */
+internal data class NativeCompletionToken(val session: Long, val revision: Long)
+
 /**
  * Independent implementation of the direct ENote callback protocol researched in ForestNote.
  * The callback thread owns its bitmap; the UI receives immutable completed edits, never points.
@@ -53,6 +56,8 @@ class ViwoodsPanel internal constructor(
     private var backgroundCanvas: Canvas? = null
     private val backgroundCopy = Paint().apply { blendMode = BlendMode.SRC }
     private var inkLayers = false
+    private var frameHandoff = false
+    private var completedRevision = 0L
     val bitmapDescription get() = if (inkLayers) "Transparent native ink layers" else "Opaque paper bitmap"
     private val raster = PaperRasterizer()
     private var page = Note()
@@ -128,7 +133,8 @@ class ViwoodsPanel internal constructor(
     fun available() = availabilityReport() == "Available"
 
     fun start(context: Context, source: Bitmap, note: Note, x: Int, y: Int,
-              orientation: Int, erase: Boolean = false, visible: Rect? = null, inkLayers: Boolean = false): Boolean {
+              orientation: Int, erase: Boolean = false, visible: Rect? = null, inkLayers: Boolean = false,
+              frameHandoff: Boolean = false): Boolean {
         stop()
         val report = availabilityReport()
         if (report != "Available") { status = report; return false }
@@ -139,6 +145,8 @@ class ViwoodsPanel internal constructor(
             instance = type.getMethod("getInstance").invoke(null)
             synchronized(lock) {
                 this.inkLayers = inkLayers
+                this.frameHandoff = frameHandoff
+                completedRevision = 0
                 frame = source.copy(Bitmap.Config.ARGB_8888, true)
                 canvas = Canvas(frame!!)
                 page = note
@@ -411,8 +419,9 @@ class ViwoodsPanel internal constructor(
             scheduleRefresh()
         }
         points.clear(); pieces.clear(); erased.clear()
-        waitingForHandoff = refreshPolicy == NativeRefreshPolicy.WORKER
-        if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK) {
+        completedRevision++
+        waitingForHandoff = refreshPolicy == NativeRefreshPolicy.WORKER || frameHandoff
+        if (refreshPolicy == NativeRefreshPolicy.REFERENCE_CALLBACK && !frameHandoff) {
             updateCompletedBackground()
             lastEndThread = Thread.currentThread().id
             call("onWritingEnd")
@@ -429,6 +438,29 @@ class ViwoodsPanel internal constructor(
     fun acknowledge() = synchronized(lock) {
         handoffRequested = true
         endWritingIfReady()
+    }
+
+    /** A late frame may not end a newer stroke, completion or restarted native session. */
+    internal fun acknowledge(token: NativeCompletionToken) = synchronized(lock) {
+        if (active && !penDown && token.session == generation && token.revision == completedRevision) {
+            handoffRequested = true
+            endWritingIfReady()
+        }
+    }
+
+    /**
+     * Snapshot immutable completed vectors briefly, then rasterize outside the live input lock.
+     * A private rasterizer avoids sharing mutable Paint state with the native callback thread.
+     */
+    internal fun drawCompleted(target: Canvas): NativeCompletionToken? {
+        val snapshot = synchronized(lock) {
+            if (!active) return null
+            Triple(page, view, NativeCompletionToken(generation, completedRevision))
+        }
+        PaperRasterizer().page(target, snapshot.first, snapshot.second)
+        return synchronized(lock) {
+            snapshot.third.takeIf { active && it.session == generation }
+        }
     }
 
     private fun endWritingIfReady() {

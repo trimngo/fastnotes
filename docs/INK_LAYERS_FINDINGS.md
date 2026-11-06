@@ -1,5 +1,11 @@
 # Reserved native pixel values and the Ink layers comparison
 
+**Device follow-up:** the user reports test12 Ink layers works, without pressure
+sensitivity, but feels slower and sometimes disappears/reappears. This is the
+working pixel-format baseline. Test13 preserves its worker presentation policy,
+replaces the diagnostic quiet-delay completion with a frame handoff, and adds an
+optional direct presentation comparison. See [current work](FRAME_HANDOFF_AND_LATENCY.md).
+
 5 November 2026. Full-size AiPaper, Android 13/API 33, firmware 3.15.15,
 `ro.eink.type=SoftSolution`. This is a controlled pixel-format comparison, not a
 claimed recovery of the earlier System preview or a verified notebook fix.

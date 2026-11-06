@@ -1,3 +1,42 @@
+# 0.3.2-test13 completed-frame handoff validation
+
+6 November 2026. Full verification succeeded:
+
+```sh
+source /workspace/tooling/env.sh
+./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
+```
+
+**146 tests passed**, no failures, errors or skips. Lint has no errors (51 warnings
+and 1 hint); debug/release compile. Fifteen new cases verify completed-only
+snapshots, native flush/frame acknowledgement ordering, stale session/revision
+tokens, cancellation, rapid completions, early hardware callbacks, detach/reset,
+software draw ordering, duplicate Android UP/CANCEL and preserved legacy capture.
+The completed image is rasterized outside the live pen lock. Ink direct presents
+on the callback thread, with completion deferred until the Android frame handoff.
+
+The user's positive test12 result establishes live Ink layers on this tablet.
+It does not establish test13 continuity or improved physical latency. Test13
+addresses the one-second diagnostic snapshot gap and adds an optional direct
+presentation comparison. Android frame submission is not a physical panel
+completion measurement. Pressure width remains fixed in these comparisons;
+notebook defaults, saved-note format and app permissions are unchanged. See
+[handoff and latency findings](FRAME_HANDOFF_AND_LATENCY.md).
+
+APK identity:
+
+- `dev.fastnotes`, version `0.3.2-test13`, code 17; minimum API 29, target API 30
+- Bytes: `7987672`
+- SHA-256: `c5e1bd3f8d20d784c6199e79d646c6be3ef4f8b0b057d937829de74fc62a6340`
+- Certificate SHA-256: `2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`
+- Same note format and package; installs over test6 or later without uninstalling
+
+The separate read-only Settings code exporter has host fixtures for foreground
+identification, code-only extraction, system-package/path validation, denied
+reads, size limits and output protection. No physical USB export was performed
+by this environment. It exports no notes or settings data and makes no device
+changes; [usage and limits](SETTINGS_CODE_EVIDENCE.md).
+
 # 0.3.2-test12 Ink layers comparison validation
 
 5 November 2026. Full verification succeeded:

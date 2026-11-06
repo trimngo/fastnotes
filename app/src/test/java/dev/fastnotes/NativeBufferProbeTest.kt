@@ -39,8 +39,7 @@ class NativeBufferProbeTest {
         fake = FakePanel.getInstance().apply { reset() }
         probe = NativeBufferProbe(context, {}) { mode ->
             factories++
-            val policy = if (mode == NativeBufferMode.REFERENCE_CALLBACK) NativeRefreshPolicy.REFERENCE_CALLBACK else NativeRefreshPolicy.WORKER
-            ViwoodsPanel(FakePanel::class.java.name, policy) { ManualNativeInkScheduler().also { scheduler = it } }
+            ViwoodsPanel(FakePanel::class.java.name, mode.refreshPolicy) { ManualNativeInkScheduler().also { scheduler = it } }
         }
     }
     @After fun cleanup() { probe.stop() }
@@ -57,7 +56,7 @@ class NativeBufferProbeTest {
             fake.emit(MotionEvent.ACTION_MOVE, 800, 353)
             fake.emit(MotionEvent.ACTION_UP, 850, 403)
             shadowOf(Looper.getMainLooper()).idle()
-            if (mode != NativeBufferMode.REFERENCE_CALLBACK) scheduler.runUntilIdle()
+            if (mode.refreshPolicy != NativeRefreshPolicy.REFERENCE_CALLBACK) scheduler.runUntilIdle()
             assertEquals(3, probe.samples)
             assertTrue(fake.rendered.isNotEmpty())
             assertTrue(fake.rendered.all(visible::contains))

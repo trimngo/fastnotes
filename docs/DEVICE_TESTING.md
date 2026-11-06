@@ -99,7 +99,28 @@ then confirm the Android installer. Cancel/retry the installer as well. Check
 rotation and leaving/reopening during a download, and that existing sheets still
 open after updating. Disable automatic checks and verify offline writing/saving.
 
-## Current step: Ink layers comparison (0.3.2-test12)
+## Current step: completion and latency comparison (0.3.2-test13)
+
+The user reports live Ink layers works, but latency is noticeable during writing
+and completed ink sometimes disappears/reappears. The one-second diagnostic
+snapshot delay could create a pen-up gap. Test13 prepares completed-only ink at
+UP and holds native completion until an Android frame has been submitted.
+
+1. Update in place through **Ink Test → Updates → Check now**.
+2. Select **Ink layers** and write with the pen tip. Lift and wait; check completed
+   ink continuity and rapid successive strokes. Moving app ink remains hidden.
+3. Compare **Ink direct** under the same conditions. It uses the same pixel format
+   and sampling, with callback-thread presentation instead of the app worker.
+   Compare steady latency and continuity; direct can also be worse if calls block.
+4. Copy report after each useful comparison. Width remains fixed in both modes.
+5. If useful, repeat landscape and pane clipping, reselecting after a native test
+   stops on focus/geometry change. Notebook/eraser defaults are not promoted yet.
+
+The earlier System preview crossing into Chrome is a clue, not a reason to remove
+clipping. The fast Settings pressure canvas is another source to inspect through
+[code-only export](SETTINGS_CODE_EVIDENCE.md). See [implementation details and limits](FRAME_HANDOFF_AND_LATENCY.md).
+
+## Earlier Ink layers comparison (0.3.2-test12)
 
 The new surface capture is usable: the user drew new strokes on an existing
 Notes page. Fastnotes produced 928 system-policy callbacks and an init attempt;

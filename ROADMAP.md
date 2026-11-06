@@ -1,6 +1,12 @@
 # Fastnotes: priorities and future ideas
 
-Current native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
+Earlier native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
+
+Current positive baseline: test12 **Ink layers** draws live according to the user.
+Next is [test13 handoff/latency](docs/FRAME_HANDOFF_AND_LATENCY.md), retaining fixed
+width while addressing completion gaps and comparing direct presentation. The
+earlier unbounded System preview and Settings pressure canvas remain research
+references; no global preview/pressure setting is changed.
 
 Test12 adds an isolated [Ink layers comparison](docs/INK_LAYERS_FINDINGS.md).
 The actual native compositor treats opaque near-white FE/FD pixels as commands;
