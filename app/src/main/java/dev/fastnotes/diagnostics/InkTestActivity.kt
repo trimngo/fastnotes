@@ -106,6 +106,7 @@ class InkTestActivity : Activity() {
         nativeProbe = NativeBufferProbe(this, log::event).also { probe ->
             probe.pressureEnabled = pressureEnabled
             probe.onStrokeFinished = { paper.nativeStrokeFinished() }
+            probe.onLiveInkChanged = { paper.nativeInkChanged() }
             probe.onFailure = { stopTest(probe.status) }
         }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
@@ -137,11 +138,12 @@ class InkTestActivity : Activity() {
             if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
         }, "System ink" to { startSystemTest() }, "Worker refresh" to { startNativeTest(NativeBufferMode.DISPLAY) },
             "Ink direct" to { startNativeTest(NativeBufferMode.INK_DIRECT) },
-            "Ink layers" to { startNativeTest(NativeBufferMode.INK_LAYERS) })
+            "Ink layers" to { startNativeTest(NativeBufferMode.INK_LAYERS) },
+            "Scrcpy" to { startNativeTest(NativeBufferMode.SCRCPY) })
         val options = LinearLayout(this)
         options.addView(CheckBox(this).apply {
             text = "Pressure"; textSize = 12f; isChecked = pressureEnabled
-            tooltipText = "Applies to Ink layers and Ink direct; uses an app pressure curve."
+            tooltipText = "Applies to Ink layers, Ink direct and Scrcpy; uses an app pressure curve."
             setOnCheckedChangeListener { _, checked ->
                 pressureEnabled = checked
                 nativeProbe.pressureEnabled = checked
@@ -182,7 +184,7 @@ class InkTestActivity : Activity() {
         root.addView(options, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
         root.addView(TextView(this).apply {
             // Fixed text preserves canvas geometry when tests/status change.
-            text = "Temporary scratchpad. Compare Ink layers with Ink direct using the pen tip. Watch ink while moving, then check it stays visible after lifting. Completed ink is handed over after an Android frame. Worker refresh keeps its earlier one-second snapshot delay."
+            text = "Temporary scratchpad. Scrcpy mirrors live native pen samples into Android screen sharing. Ink layers and Ink direct show an Android image after lifting. Watch while moving and check ink stays visible. Use the pen tip; pressure applies to all three transparent modes."
             textSize = 13f; setTextColor(Color.BLACK); setPadding(dp(12), dp(4), dp(12), dp(4))
         })
         root.addView(TextView(this).apply {
@@ -238,7 +240,8 @@ class InkTestActivity : Activity() {
         if (mode.inkLayers) {
             // Finish the mode-selection reset before enabling the native overlay.
             // Posting a Runnable alone would not establish draw/submission ordering.
-            paper.nativeMode(nativeProbe::capture, { nativeProbe.penDown }, nativeProbe::captureCompleted)
+            paper.nativeMode(nativeProbe::capture, { nativeProbe.penDown }, nativeProbe::captureCompleted,
+                if (mode.liveCapture) nativeProbe::captureLive else null)
             status.text = "${mode.label} selected. Write with the pen tip and check ink while moving."
             val request = NativePreparation(mode, geometry, SystemClock.uptimeMillis())
             nativePreparation = request
@@ -469,7 +472,8 @@ class InkTestActivity : Activity() {
         append("System experiment: ${systemExperiment.choice}; last requested area: ${lastSystemArea?.toShortString()}\n")
         append("System startup: $systemStartup\n")
         append("System selection: $systemSelected; waiting to resume: $systemResumePending; manual retry required: $systemStartFailed\n")
-        append("Native pressure enabled: $pressureEnabled (Ink layers / Ink direct; app curve)\n")
+        append("Native pressure enabled: $pressureEnabled (Ink layers / Ink direct / Scrcpy; app curve)\n")
+        append("Live Android capture: ${activeNativeMode?.liveCapture == true}; scrcpy encoding and physical latency require a device check.\n")
         append("Scratch handoff: ${paper.handoffDescription}\n")
         append("Native startup: $nativeStartup\n")
         append("User observed ink while moving: $observed\n")
