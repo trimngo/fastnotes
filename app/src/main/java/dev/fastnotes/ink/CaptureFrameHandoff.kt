@@ -70,7 +70,7 @@ internal class CaptureFrameHandoff(
 
     fun onDrawn(token: NativeCompletionToken?) {
         val request = pending
-        drawn = Drawn(if (request?.token == token && token != null) request.id else 0, token)
+        drawn = Drawn(if (request != null && request.token == token && token != null) request.id else 0, token)
         if (request == null || request.token != token) return
         if (request.needsRegistration) {
             register(request)
