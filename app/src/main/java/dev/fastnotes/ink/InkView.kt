@@ -36,11 +36,11 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     private val liveCapturePending = AtomicBoolean()
     private val liveCaptureRequests = AtomicLong()
     private var captureDraws = 0L
-    private val liveCaptureTask = Runnable {
+    private val liveCaptureTask: Runnable = Runnable {
         if (sharingEnabled && panel.active && isAttachedToWindow) classic.postInvalidateOnAnimation()
         else liveCapturePending.set(false)
     }
-    private val classic = object : View(context) {
+    private val classic: View = object : View(context) {
         override fun onDraw(canvas: Canvas) {
             // Clear at entry: a sample arriving during capture must request a later frame.
             this@InkView.removeCallbacks(liveCaptureTask)
@@ -50,7 +50,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
             if (sharingEnabled) captureDraws++
         }
     }
-    private val captureHandoff = CaptureFrameHandoff(classic, { token ->
+    private val captureHandoff: CaptureFrameHandoff = CaptureFrameHandoff(classic, { token ->
         if (sharingEnabled && panel.active) panel.acknowledge(token)
     })
     val screenSharingEnabled get() = sharingEnabled
