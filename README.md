@@ -1,7 +1,19 @@
 # Fastnotes
 
 A small Android handwriting notepad for the **full-size Viwoods AiPaper** that
-keeps notes offline. **0.3.2-test15 restores pressure in the working ink comparisons.**
+keeps notes offline. **Development source for 0.3.2-test16 adds live screen sharing.**
+Enable **Settings → Screen sharing (scrcpy)** in the notebook, or select **Scrcpy**
+in the ink test. Native-derived strokes are drawn into a capturable Android View
+while the physical fast-ink worker remains active. Sharing uses stable vectors
+rather than the mutable native preview bitmap, with frame-paced updates and
+matching completed-frame handoff. The notebook keeps its existing saved-stroke
+format; the temporary comparison also supports pressure.
+See [scrcpy setup and device checks](docs/SCRCPY.md).
+
+This source is under review. The cloud workspace failed to start, so an APK signed
+with the existing installation key has not been published for test16.
+
+Test15 restored pressure in the working ink comparisons.
 The user confirms test14's mode-selection hesitation has disappeared. Ink layers
 and Ink direct now use a shared pressure-aware renderer for live/completed ink,
 with a Pressure checkbox for comparison. The System selector separately tests
