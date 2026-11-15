@@ -1,5 +1,19 @@
 # AiPaper device testing
 
+Development check: [screen sharing / scrcpy](SCRCPY.md), 0.3.2-test16 source.
+A signed install-in-place test16 APK is not yet published because the cloud
+workspace failed to start.
+
+After installing a correctly signed build, enable **Screen sharing (scrcpy)** in
+notebook Settings or select **Scrcpy** in Ink Test. Confirm the computer shows ink
+before pen-up, including pressure in the temporary test. Check no new stroke
+appears twice, completed ink keeps its shape, canceled/erased strokes disappear,
+and portrait/both landscape/Chrome split-screen coordinates stay aligned.
+Compare tablet writing latency with sharing off. Record the scrcpy stream using
+the command in the linked guide; rendered host test frames are not evidence of
+physical panel or encoder behavior.
+
+
 Target: full-size Viwoods AiPaper, firmware **3.15.15**, original pen and eraser,
 right-handed use. The user confirmed Android 13/API 33. Use **Settings → Device
 details → Copy** in Fastnotes to copy the model, build and native-route counters.

@@ -1,3 +1,33 @@
+# 0.3.2-test16 live capture verification
+
+15 November 2026. The user reports scrcpy shows ink only after pen-up. This source
+adds explicit notebook screen sharing and a pressure-aware Scrcpy comparison.
+Native-derived vectors enter Android's composed View while the worker fast path
+remains active; the mutable native bitmap is never handed to capture rendering.
+
+Verification runs through the **Android checks** workflow on the proposed commit:
+unit tests, lint and release compilation. Its result and a
+`fastnotes-capture-checks` artifact contain test reports and deterministic fixture
+images, including a live-before-UP capture. The workflow result is the authority
+for execution status; this document does not infer hardware behavior from a build.
+
+New cases cover live fixed/pressure ink before UP, clipping/cancel/eraser, coherent
+snapshots, long strokes, rasterization outside the pen lock, coalesced frames,
+updates during drawing, matching token/frame handoff, stale callback cleanup,
+duplicate Android/native input, fallback and saved settings.
+
+The cloud execution environment failed before file/command access. Source work
+continued through the connected repository on an isolated branch. No signed
+test16 APK has been published: the existing installation's signing key is in
+that unavailable workspace. A CI-generated debug key must not be presented as an
+install-in-place update. The expected existing certificate SHA-256 remains
+`2c2d3546e1c01cf97899eb656c762f52bfa5f4c93626004eaf1deb26fd5ba601`.
+
+Source version: `dev.fastnotes`, `0.3.2-test16`, code 20; minimum API 29,
+target API 30. Notebook storage, permissions and global firmware settings are
+unchanged. Actual scrcpy artifacts and physical pen latency still require the
+tablet. [Setup and test guide](SCRCPY.md).
+
 # 0.3.2-test15 pressure and System comparison validation
 
 6 November 2026. The full verification command succeeded:

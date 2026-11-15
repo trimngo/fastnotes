@@ -13,6 +13,8 @@ import androidx.graphics.lowlatency.LowLatencyCanvasView
 import androidx.annotation.AnyThread
 import dev.fastnotes.model.*
 import kotlin.math.*
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 enum class Tool { PEN, ERASER, MOVE }
 
@@ -30,15 +32,37 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     private data class Segment(val a: InkPoint, val b: InkPoint, val width: Float)
     private val pending = ArrayDeque<Segment>()
     private var redrawFront = true
-    private val classic = object : View(context) {
-        override fun onDraw(canvas: Canvas) { drawScene(canvas) }
+    @Volatile private var sharingEnabled = false
+    private val liveCapturePending = AtomicBoolean()
+    private val liveCaptureRequests = AtomicLong()
+    private var captureDraws = 0L
+    private val liveCaptureTask: Runnable = Runnable {
+        if (sharingEnabled && panel.active && isAttachedToWindow) classic.postInvalidateOnAnimation()
+        else liveCapturePending.set(false)
     }
+    private val classic: View = object : View(context) {
+        override fun onDraw(canvas: Canvas) {
+            // Clear at entry: a sample arriving during capture must request a later frame.
+            this@InkView.removeCallbacks(liveCaptureTask)
+            liveCapturePending.set(false)
+            val token = drawScene(canvas)
+            captureHandoff.onDrawn(token)
+            if (sharingEnabled) captureDraws++
+        }
+    }
+    private val captureHandoff: CaptureFrameHandoff = CaptureFrameHandoff(classic, { token ->
+        if (sharingEnabled && panel.active) panel.acknowledge(token)
+    })
+    val screenSharingEnabled get() = sharingEnabled
+    internal val captureFramePending get() = liveCapturePending.get()
+    internal val captureRequestCount get() = liveCaptureRequests.get()
     private val front = LowLatencyCanvasView(context)
     private var panelFailed = false
     private var nativeFailureReason = ""
     private val hasNativeApi by lazy { panel.available() }
     private data class NativeGeometry(val width: Int, val height: Int, val x: Int, val y: Int,
-        val orientation: Int, val tool: Tool, val noteId: String, val scrollY: Float, val clip: Rect)
+        val orientation: Int, val tool: Tool, val noteId: String, val scrollY: Float, val clip: Rect,
+        val sharing: Boolean)
     private var activeGeometry: NativeGeometry? = null
     private var lastAttemptGeometry: NativeGeometry? = null
     private var lastStartReport = "No native start attempted"
@@ -89,6 +113,13 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
 
     init {
         panel.onEditsAvailable = { post { drainNative() } }
+        panel.onLiveInkChanged = {
+            // Firmware callbacks only schedule a coalesced frame, never read Views or upload bitmaps.
+            if (sharingEnabled && liveCapturePending.compareAndSet(false, true)) {
+                liveCaptureRequests.incrementAndGet()
+                post(liveCaptureTask)
+            }
+        }
         panel.onFailure = { post { failNative(panel.status) } }
         setBackgroundColor(Color.WHITE)
         clipChildren = true
@@ -132,7 +163,12 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         refreshEngine()
     }
 
-    fun setRendering(frontBuffer: Boolean, viwoods: Boolean) {
+    fun setRendering(frontBuffer: Boolean, viwoods: Boolean, screenSharing: Boolean = sharingEnabled) {
+        if (sharingEnabled != screenSharing) {
+            finishGesture(false)
+            stopNative()
+            sharingEnabled = screenSharing
+        }
         frontEnabled = frontBuffer
         panelWanted = viwoods
         panelFailed = false
@@ -155,21 +191,25 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         "\nLast native picture mode: " + panel.lastActiveMode + " (4 = FAST)" +
         "\nNative refresh: 8 ms pacing, 32 ms coverage" +
         "\nLongest native refresh call: " + String.format(java.util.Locale.ROOT, "%.1f ms", panel.maxRenderMicros / 1000.0) +
+        "\nScreen sharing: " + sharingEnabled + "; Android capture requests: " + liveCaptureRequests.get() +
+        "; draws: " + captureDraws + "\nCapture counts do not measure encoder or panel latency." +
         "\nLast native start: " + lastStartReport +
         "\nEditor: ${width}×${height}; split-screen: $multiWindow; focused: ${hasWindowFocus()}" +
         if (nativeFailureReason.isBlank()) "" else "\nFallback: " + nativeFailureReason
     val nativeActive get() = panel.active
     val engineLabel get() = when {
-        panel.active -> "Viwoods native"
+        panel.active -> if (sharingEnabled) "Viwoods native · sharing" else "Viwoods native"
         panelWanted && hasNativeApi && !panelFailed && tool != Tool.MOVE -> "Fast ink paused"
-        else -> "Android ink"
+        else -> if (sharingEnabled) "Android ink · sharing" else "Android ink"
     }
     val engineDescription: String get() = when {
+        panel.active && sharingEnabled -> "Viwoods pen input with Android screen sharing"
         panel.active -> "Viwoods direct pen input"
         panelFailed -> "Android ink · " + nativeFailureReason
         panelWanted && !panelAvailable -> "Android ink · native callback API unavailable"
         panelWanted && tool != Tool.MOVE -> "Viwoods native ink paused: " + pauseReason
         front.visibility == View.VISIBLE -> "Android front-buffer ink"
+        sharingEnabled -> "Android screen-sharing ink"
         else -> "Android compatibility ink"
     }
 
@@ -249,13 +289,13 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
                 panelOrientation(mode.physicalWidth, mode.physicalHeight, screen.rotation)
             } ?: resources.configuration.orientation
             geometry = NativeGeometry(width, height, location[0], location[1],
-                panelDirection, tool, editor!!.note.id, editor!!.note.scrollY, Rect(visible))
+                panelDirection, tool, editor!!.note.id, editor!!.note.scrollY, Rect(visible), sharingEnabled)
             if (panel.active && geometry == activeGeometry) return
             // A failed attempt during one transient layout must not disable a later stable pane.
             if (geometry != lastAttemptGeometry) panelFailed = false
         }
         if (!panel.active && (geometry == null || panelFailed) && activeGeometry == null &&
-            front.visibility == (if (frontEnabled && isHardwareAccelerated) View.VISIBLE else View.GONE)) {
+            front.visibility == (if (frontEnabled && !sharingEnabled && isHardwareAccelerated) View.VISIBLE else View.GONE)) {
             notifyEngineChanged()
             return
         }
@@ -263,7 +303,8 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         if (geometry != null && !panelFailed) {
             lastAttemptGeometry = geometry
             val started = panel.start(context, image!!, editor!!.note, geometry.x, geometry.y,
-                geometry.orientation, tool == Tool.ERASER, geometry.clip)
+                geometry.orientation, tool == Tool.ERASER, geometry.clip,
+                inkLayers = geometry.sharing, frameHandoff = geometry.sharing, pressureInk = false)
             lastStartReport = "${geometry.width}×${geometry.height} at ${geometry.x},${geometry.y}; " +
                 "visible ${geometry.clip.toShortString()}; panel orientation ${geometry.orientation}, " +
                 "pane orientation ${resources.configuration.orientation}; " + panel.status
@@ -273,7 +314,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
                 nativeFailureReason = panel.status
             }
         }
-        front.visibility = if (frontEnabled && isHardwareAccelerated && !panel.active) View.VISIBLE else View.GONE
+        front.visibility = if (frontEnabled && !sharingEnabled && isHardwareAccelerated && !panel.active) View.VISIBLE else View.GONE
         classic.visibility = if (front.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
         presentScene()
         notifyEngineChanged()
@@ -320,12 +361,18 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
 
     @AnyThread
-    private fun drawScene(canvas: Canvas) {
-        if (panel.drawPreview(canvas)) return
+    private fun drawScene(canvas: Canvas): NativeCompletionToken? {
+        if (sharingEnabled) {
+            // Capture stable vectors; never hand Android the mutable firmware bitmap.
+            val token = panel.drawCaptureFrame(canvas)
+            if (token != null) return token
+        } else if (panel.drawPreview(canvas)) return null
+        // A stopped/replaced snapshot can already have painted pixels; overwrite all of it.
         synchronized(lock) {
             canvas.drawColor(Color.WHITE)
             bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
         }
+        return null
     }
 
     private fun presentScene() {
@@ -538,7 +585,10 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
                 // Keep the native preview untouched if a newer stroke is already in flight.
                 rebuild(restartNative = false)
             }
-            panel.acknowledge()
+            if (sharingEnabled) {
+                panel.completionToken()?.let(captureHandoff::request)
+                if (!panel.active) captureHandoff.cancel()
+            } else panel.acknowledge()
             if (completed.isNotEmpty()) notifyEngineChanged()
         } finally { drainingNative = false }
     }
@@ -548,6 +598,14 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         activeGeometry = null
         drainNative()
         clearHeldEvents()
+        // stop() may itself emit a final live notification; discard it after shutdown.
+        cancelCaptureFrame()
+    }
+
+    private fun cancelCaptureFrame() {
+        removeCallbacks(liveCaptureTask)
+        liveCapturePending.set(false)
+        captureHandoff.cancel()
     }
 
     private fun clearHeldEvents() {

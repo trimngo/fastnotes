@@ -54,6 +54,8 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     private var captureNative: ((Canvas) -> Boolean)? = null
     private var nativePenDown: (() -> Boolean)? = null
     private var captureCompletedNative: ((Canvas) -> (() -> Unit)?)? = null
+    private var captureLiveNative: ((Canvas) -> Boolean)? = null
+    private var liveRedrawPending = false
     private var snapshotSerial = 0L
     @Volatile private var drawnSnapshotSerial = 0L
     private var handoffEpoch = 0L
@@ -101,7 +103,9 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     private var pressureSamples = 0L
     private var minPressure = 0f
     private var maxPressure = 0f
-    val handoffDescription get() = if (systemHandoff)
+    val handoffDescription get() = if (captureLiveNative != null)
+        "Android live capture from native samples; completed handoff after Android frame submission"
+        else if (systemHandoff)
         "Completed strokes at pen-up; pressure-aware replay built at pen-up, estimated 2–8 px; native curve unverified"
         else if (captureCompletedNative != null) "Completed native ink at pen-up; handoff after Android frame submission"
         else if (firmwareTest) "App ink after one second of quiet" else "Android live drawing"
@@ -134,7 +138,8 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     }
 
     fun mode(firmware: Boolean) {
-        captureNative = null; nativePenDown = null; captureCompletedNative = null
+        captureNative = null; nativePenDown = null; captureCompletedNative = null; captureLiveNative = null
+        liveRedrawPending = false
         systemHandoff = false
         clear(); firmwareTest = firmware
     }
@@ -149,9 +154,17 @@ class InkTestView internal constructor(context: Context, private val frameCommit
         invalidate()
     }
     fun nativeMode(capture: (Canvas) -> Boolean, penDown: () -> Boolean,
-                   completedCapture: ((Canvas) -> (() -> Unit)?)? = null) {
+                   completedCapture: ((Canvas) -> (() -> Unit)?)? = null,
+                   liveCapture: ((Canvas) -> Boolean)? = null) {
         mode(true)
         captureNative = capture; nativePenDown = penDown; captureCompletedNative = completedCapture
+        captureLiveNative = liveCapture
+    }
+    /** Called on UI after native input changes; Android touch events are never a second ink source. */
+    fun nativeInkChanged() {
+        if (captureLiveNative == null || liveRedrawPending) return
+        liveRedrawPending = true
+        postInvalidateOnAnimation()
     }
     /** Submit the prepared paper before enabling native ink. This does not measure panel readiness. */
     fun afterPreparedFrame(onPrepared: () -> Unit): () -> Unit {
@@ -189,17 +202,39 @@ class InkTestView internal constructor(context: Context, private val frameCommit
         cancelPendingHandoff()
         completed.clear(); current = null; pointer = -1; committed = 0; inside = false
         pressurePointCount = 0
+        liveRedrawPending = false
         samples = 0; maxEventAgeMs = 0
         pressureSamples = 0; minPressure = 0f; maxPressure = 0f
         discardSnapshot()
         invalidate()
     }
 
-    override fun onDraw(canvas: Canvas) {
+    private fun drawPaper(canvas: Canvas) {
         canvas.drawColor(Color.WHITE)
         val spacing = 48 * resources.displayMetrics.density
         var y = spacing
         while (y < height) { canvas.drawLine(0f, y, width.toFloat(), y, lines); y += spacing }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        // Consume before reading native state. An update arriving during this draw needs a new frame.
+        liveRedrawPending = false
+        drawPaper(canvas)
+        captureLiveNative?.let { capture ->
+            if (capture(canvas)) {
+                // The coherent native scene includes every completed stroke in the earlier
+                // snapshot, plus any newer moving ink. Never paint that old snapshot over it.
+                // Its bitmap was not used by HWUI, so snapshotWasDrawn deliberately stays false.
+                if (nativeSnapshot != null) {
+                    drawnSnapshotSerial = snapshotSerial
+                    snapshotDrawn()
+                }
+                preparationDrawn()
+                return
+            }
+            // A stopped/replaced generation may already have rasterized before returning false.
+            drawPaper(canvas)
+        }
         nativeSnapshot?.let {
             canvas.drawBitmap(it, 0f, 0f, null)
             snapshotWasDrawn = true
@@ -309,6 +344,7 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     }
 
     override fun onDetachedFromWindow() {
+        liveRedrawPending = false
         removeCallbacks(settle); cancelPendingPreparation(); cancelPendingHandoff(); discardSnapshot()
         super.onDetachedFromWindow()
     }

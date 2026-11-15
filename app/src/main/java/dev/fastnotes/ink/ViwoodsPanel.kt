@@ -100,6 +100,13 @@ class ViwoodsPanel internal constructor(
         private set
     var onEditsAvailable: (() -> Unit)? = null
     var onFailure: (() -> Unit)? = null
+    /** Capture observers may schedule a UI frame, never render or perform I/O inline. */
+    @Volatile var onLiveInkChanged: (() -> Unit)? = null
+
+    private fun publishLiveInkChanged() {
+        // Capture is optional; an observer failure must not disable physical fast ink.
+        runCatching { onLiveInkChanged?.invoke() }
+    }
     @Volatile var active = false
         private set
     @Volatile var penDown = false
@@ -318,6 +325,7 @@ class ViwoodsPanel internal constructor(
             if (dirty != null) {
                 redrawPage(erased)
                 queueRender(dirty)
+                publishLiveInkChanged()
             }
         } else {
             val a = view.screen(previous)
@@ -335,6 +343,7 @@ class ViwoodsPanel internal constructor(
             val pad = ceil(max(screenWidth, previousScreenWidth) / 2f).toInt() + 4
             queueRender(Rect(floor(min(a.x, b.x)).toInt() - pad, floor(min(a.y, b.y)).toInt() - pad,
                 ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad))
+            publishLiveInkChanged()
         }
     }
 
@@ -473,6 +482,7 @@ class ViwoodsPanel internal constructor(
             lastEndThread = Thread.currentThread().id
             call("onWritingEnd")
         }
+        publishLiveInkChanged()
         onEditsAvailable?.invoke()
     }
 
@@ -515,6 +525,69 @@ class ViwoodsPanel internal constructor(
         return synchronized(lock) {
             snapshot.token.takeIf { active && it.session == generation }
         }
+    }
+
+    private data class CapturePiece(val points: List<InkPoint>, val widths: List<Float>?)
+    private data class CaptureSnapshot(
+        val page: Note,
+        val view: Viewport,
+        val widths: Map<Long, List<Float>>,
+        val clip: Rect,
+        val token: NativeCompletionToken,
+        val pieces: List<CapturePiece>,
+        val excluded: Set<Long>,
+    )
+
+    /**
+     * Draw a coherent vector snapshot into Android's capturable surface. No mutable
+     * native bitmap or Paint/Path is shared with HWUI. Only current sample lists are
+     * copied under the pen lock; all rasterization happens after releasing it.
+     *
+     * A null result requires the caller to repaint its fallback: the session may
+     * have stopped/restarted while this detached snapshot was being rasterized.
+     * The token covers completed strokes, even when this frame also has live ink.
+     */
+    internal fun drawCaptureFrame(target: Canvas): NativeCompletionToken? {
+        val snapshot = synchronized(lock) {
+            if (!active) return null
+            val live = ArrayList<CapturePiece>()
+            if (penDown && !strokeIsEraser) {
+                for (index in pieces.indices) {
+                    // Piece lists were frozen when the pointer left the visible clip.
+                    live.add(CapturePiece(pieces[index], if (pressureInk) pieceWidths[index] else null))
+                }
+                if (points.isNotEmpty()) {
+                    live.add(CapturePiece(points.toList(), if (pressureInk) pointWidths.toList() else null))
+                }
+            }
+            CaptureSnapshot(page, view, pressureWidths, Rect(visibleLocal),
+                NativeCompletionToken(generation, completedRevision), live.toList(),
+                if (penDown && strokeIsEraser) erased.toSet() else emptySet())
+        }
+        val fixed = PaperRasterizer()
+        val pressure = NativePressureRasterizer()
+        val saved = target.save()
+        try {
+            target.clipRect(snapshot.clip)
+            fixed.paper(target, snapshot.page, snapshot.view)
+            pressure.ink(target, snapshot.page, snapshot.view, snapshot.widths,
+                snapshot.clip, fixed, snapshot.excluded)
+            for (piece in snapshot.pieces) {
+                val widths = piece.widths
+                if (widths == null) fixed.stroke(target, piece.points, snapshot.page.penWidth, snapshot.view)
+                else pressure.stroke(target, piece.points, widths, snapshot.view)
+            }
+        } finally { target.restoreToCount(saved) }
+        return synchronized(lock) {
+            snapshot.token.takeIf { active && it.session == generation }
+        }
+    }
+
+    fun drawCapture(target: Canvas): Boolean = drawCaptureFrame(target) != null
+
+    /** Only a finished gesture waiting for its Android frame can request handoff. */
+    internal fun completionToken(): NativeCompletionToken? = synchronized(lock) {
+        if (active && !penDown && waitingForHandoff) NativeCompletionToken(generation, completedRevision) else null
     }
 
     private fun endWritingIfReady() {

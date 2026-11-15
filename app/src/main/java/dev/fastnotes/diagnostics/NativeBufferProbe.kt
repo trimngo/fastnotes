@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import java.util.concurrent.atomic.AtomicBoolean
 import dev.fastnotes.ink.PaperRasterizer
 import dev.fastnotes.ink.ViwoodsPanel
 import dev.fastnotes.ink.NativeRefreshPolicy
@@ -15,13 +16,15 @@ import dev.fastnotes.model.Viewport
 enum class NativeBufferMode(
     val label: String,
     val refreshPolicy: NativeRefreshPolicy = NativeRefreshPolicy.WORKER,
-    val inkLayers: Boolean = false
+    val inkLayers: Boolean = false,
+    val liveCapture: Boolean = false
 ) {
     PANE("Native pane"),
     DISPLAY("Worker refresh"),
     REFERENCE_CALLBACK("Reference callback", NativeRefreshPolicy.REFERENCE_CALLBACK),
     INK_LAYERS("Ink layers", inkLayers = true),
-    INK_DIRECT("Ink direct", NativeRefreshPolicy.REFERENCE_CALLBACK, inkLayers = true)
+    INK_DIRECT("Ink direct", NativeRefreshPolicy.REFERENCE_CALLBACK, inkLayers = true),
+    SCRCPY("Scrcpy", inkLayers = true, liveCapture = true)
 }
 
 /** Temporary geometry/execution comparisons; live performance requires a user observation. */
@@ -41,10 +44,15 @@ class NativeBufferProbe internal constructor(
     private var mode: NativeBufferMode? = null
     private var panelDirection = 0
     private var lastDetails = "No native buffer test requested."
+    private var capturePending = AtomicBoolean()
+    private var captureNotification: Runnable? = null
+    private var liveFrames = 0L
+    private var liveNotifications = 0L
     var status = "No native buffer test requested."
         private set
     var onStrokeFinished: (() -> Unit)? = null
     var onFailure: (() -> Unit)? = null
+    var onLiveInkChanged: (() -> Unit)? = null
     var pressureEnabled = true
     val active get() = panel?.active == true
     val penDown get() = panel?.penDown == true
@@ -77,6 +85,22 @@ class NativeBufferProbe internal constructor(
             else raster.page(Canvas(source), note, viewport)
             val engine = panelFactory(mode)
             panel = engine
+            val pendingCapture = AtomicBoolean()
+            capturePending = pendingCapture
+            liveFrames = 0
+            liveNotifications = 0
+            val notifyCapture = Runnable {
+                if (panel === engine && engine.active && mode.liveCapture) {
+                    liveNotifications++
+                    onLiveInkChanged?.invoke()
+                } else pendingCapture.set(false)
+            }
+            captureNotification = notifyCapture
+            if (mode.liveCapture) engine.onLiveInkChanged = {
+                // Keep one UI wakeup until a draw consumes the newest native scene.
+                // The native callback neither reads a View nor copies a screen bitmap.
+                if (pendingCapture.compareAndSet(false, true)) main.post(notifyCapture)
+            }
             engine.onEditsAvailable = {
                 // No file IO or View access on the firmware callback thread; no scratch edits
                 // reach NoteStore. A fresh controller and identity check reject stale callbacks.
@@ -127,6 +151,23 @@ class NativeBufferProbe internal constructor(
         } finally { target.restoreToCount(save) }
     }
 
+    /** Native-derived vectors in Android composition, including a still-moving stroke. */
+    fun captureLive(target: Canvas): Boolean {
+        val engine = panel ?: return false
+        if (mode?.liveCapture != true) return false
+        // Consume before drawing: an update arriving during rasterization needs another frame.
+        capturePending.set(false)
+        val save = target.save()
+        val captured = try {
+            target.translate((bufferBounds.left - canvasBounds.left).toFloat(),
+                (bufferBounds.top - canvasBounds.top).toFloat())
+            engine.drawCapture(target)
+        } finally { target.restoreToCount(save) }
+        if (!captured || panel !== engine || !engine.active) return false
+        liveFrames++
+        return true
+    }
+
     /** Returns the acknowledgement for exactly the completed-only image just captured. */
     fun captureCompleted(target: Canvas): (() -> Unit)? {
         val engine = panel ?: return null
@@ -151,6 +192,7 @@ class NativeBufferProbe internal constructor(
         append("Policy=${engine.refreshPolicy}; callback thread=${engine.lastCallbackThread}; render thread=${engine.lastRenderThread}; stroke-end thread=${engine.lastEndThread}\n")
         append("Bitmap=${engine.bitmapDescription}\n")
         append("Pressure=${engine.pressureDescription}\n")
+        append("Android live capture=${mode?.liveCapture == true}; frames=$liveFrames; UI notifications=$liveNotifications. Capture/encoder latency is unverified.\n")
         append("${engine.status}. Call timing excludes visible panel latency.")
     } } ?: lastDetails
 
@@ -160,6 +202,10 @@ class NativeBufferProbe internal constructor(
         panel = null // queued callbacks from this controller can no longer touch the test
         engine.onEditsAvailable = null
         engine.onFailure = null
+        engine.onLiveInkChanged = null
+        captureNotification?.let(main::removeCallbacks)
+        captureNotification = null
+        capturePending.set(false)
         checkpoint("${mode?.label}: stopping native controller")
         engine.stop()
         lastDetails += "\nController stopped; counters above were captured before stopping."

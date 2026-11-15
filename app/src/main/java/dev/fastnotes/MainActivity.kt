@@ -115,8 +115,7 @@ class MainActivity : Activity() {
             }
             onEngineChanged = { updateHint() }
             palmGuard = app.preferences.getBoolean("palmGuard", true)
-            setRendering(app.preferences.getBoolean("frontBuffer", true),
-                app.preferences.getBoolean("viwoodsNativeInk", true))
+            applyRenderingPreferences(this)
         }
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(rule())
@@ -301,6 +300,14 @@ class MainActivity : Activity() {
             .setNegativeButton("Cancel", null).create())
     }
 
+    private fun applyRenderingPreferences(target: InkView = paper) {
+        target.setRendering(
+            app.preferences.getBoolean("frontBuffer", true),
+            app.preferences.getBoolean("viwoodsNativeInk", true),
+            app.preferences.getBoolean("screenSharing", false)
+        )
+    }
+
     private fun settings() {
         val editor = app.editor ?: return
         val content = LinearLayout(this).apply {
@@ -352,11 +359,22 @@ class MainActivity : Activity() {
         })
         label("On: two fingers scroll. Off: one finger scrolls. Fingers never draw. Move and the arrows always let you scroll.")
         content.addView(Switch(this).apply {
+            text = "Screen sharing (scrcpy)"
+            isChecked = app.preferences.getBoolean("screenSharing", false)
+            setTextColor(Color.BLACK); minHeight = dp(48)
+            setOnCheckedChangeListener { _, checked ->
+                app.preferences.edit().putBoolean("screenSharing", checked).apply()
+                applyRenderingPreferences()
+                updateHint()
+            }
+        })
+        label("Show live writing in screen sharing and recordings. Viwoods fast ink stays active when available.")
+        content.addView(Switch(this).apply {
             text = "Low-latency rendering"; isChecked = app.preferences.getBoolean("frontBuffer", true)
             setTextColor(Color.BLACK); minHeight = dp(48)
             setOnCheckedChangeListener { _, checked ->
                 app.preferences.edit().putBoolean("frontBuffer", checked).apply()
-                paper.setRendering(checked, app.preferences.getBoolean("viwoodsNativeInk", true))
+                applyRenderingPreferences()
             }
         })
         label("Turn this off to use compatibility rendering if ink does not display correctly.")
@@ -367,7 +385,7 @@ class MainActivity : Activity() {
             setTextColor(Color.BLACK); minHeight = dp(48)
             setOnCheckedChangeListener { _, checked ->
                 app.preferences.edit().putBoolean("viwoodsNativeInk", checked).apply()
-                paper.setRendering(app.preferences.getBoolean("frontBuffer", true), checked)
+                applyRenderingPreferences()
             }
         })
         label(if (paper.panelAvailable)
@@ -375,7 +393,7 @@ class MainActivity : Activity() {
             else "The native Viwoods input interface was not found. Android ink is active.")
         if (paper.panelAvailable) content.addView(button("Retry fast ink") {
             app.preferences.edit().putBoolean("viwoodsNativeInk", true).apply()
-            paper.setRendering(app.preferences.getBoolean("frontBuffer", true), true)
+            applyRenderingPreferences()
             Toast.makeText(this, "Fast ink will retry when you close Settings", Toast.LENGTH_SHORT).show()
         })
         label("Notes stay on this device. Uninstalling removes them. This version has no sync or note encryption.")
