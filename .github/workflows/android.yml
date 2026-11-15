@@ -23,4 +23,16 @@ jobs:
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Test, lint, and compile
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease -PscreenshotDir="$RUNNER_TEMP/fastnotes-capture-checks"
+
+      - name: Keep capture verification images and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastnotes-capture-checks
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/fastnotes-capture-checks
+            app/build/test-results/testDebugUnitTest
+            app/build/reports/tests/testDebugUnitTest
