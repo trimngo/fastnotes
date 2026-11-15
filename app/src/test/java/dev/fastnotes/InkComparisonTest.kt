@@ -239,7 +239,7 @@ class InkComparisonTest {
             assertEquals(failedRemovals + 1, service.removes)
             repeat(4) { paper.viewTreeObserver.dispatchOnPreDraw() }
             assertEquals(failedRemovals + 1, service.removes)
-            for (label in listOf("Android pen", "Worker refresh", "Ink direct", "Ink layers", "Updates", "API files", "System ink")) {
+            for (label in listOf("Android pen", "Worker refresh", "Ink direct", "Ink layers", "Scrcpy", "Updates", "API files", "System ink")) {
                 button(label).performClick()
                 assertTrue(probe.hasRegistration)
                 assertTrue(paper.firmwareTest)
