@@ -1,5 +1,15 @@
 # Fastnotes: priorities and future ideas
 
+Current development (15 November 2026): [live Android capture for scrcpy](docs/SCRCPY.md).
+The user confirms current scrcpy ink appears only after pen-up. The new explicit
+sharing mode provides native-derived moving strokes in Android composition,
+preserves the worker fast path, and keeps pressure in the temporary test.
+Native snapshots rasterize outside the pen lock; View updates coalesce to frames.
+The notebook's fixed-width storage format remains unchanged. Device/encoder
+artifacts and physical latency need a tablet recording; an install-in-place APK
+is blocked by the failed cloud workspace and its unavailable signing key.
+
+
 Earlier native investigation: [test11 System ink restoration](docs/SOFTSOLUTION_FINDINGS.md).
 
 Current work: test14's mode-selection hesitation is reported gone. Test15
