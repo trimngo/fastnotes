@@ -99,6 +99,8 @@ class ViwoodsPanel internal constructor(
     @Volatile var maxRenderMicros = 0L
         private set
     var onEditsAvailable: (() -> Unit)? = null
+    /** Raw stylus input for optional USB whiteboard; callback MUST be nonblocking. */
+    @Volatile var onInkSample: ((Int, Float, Float, Int, Boolean) -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     @Volatile var active = false
         private set
@@ -241,6 +243,12 @@ class ViwoodsPanel internal constructor(
                 val x = (args[0] as Number).toFloat() - screenBounds.left
                 val y = (args[1] as Number).toFloat() - screenBounds.top
                 val buttons = (args[7] as Number).toInt()
+                val relay = onInkSample
+                val validPenEvent = when (action) {
+                    MotionEvent.ACTION_DOWN -> inside(x, y)
+                    MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> penDown
+                    else -> false
+                }
                 when (action) {
                     MotionEvent.ACTION_DOWN -> {
                         if (!inside(x, y)) return
@@ -265,6 +273,9 @@ class ViwoodsPanel internal constructor(
                     }
                     MotionEvent.ACTION_CANCEL -> if (penDown) finishLocked(true)
                 }
+                // Separate the visual native ink route from the Mac's pen-coordinate stream.
+                // No JSON, IO, or thread blocking is allowed inside the firmware callback.
+                if (validPenEvent) relay?.invoke(action, x, y, pressure, strokeIsEraser)
             }
         } catch (_: Throwable) {
             status = "Native ink stopped at " + failureStage
