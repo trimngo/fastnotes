@@ -16,11 +16,12 @@ app is the Mac viewer.
 4. With Android USB debugging enabled, run on the Mac:
 
    \`adb devices\`
-   \`adb reverse tcp:17172 tcp:17172\`
+   \`adb -d reverse tcp:17172 tcp:17172\`
 
 5. Open \`http://127.0.0.1:17171\` in the Mac browser, then share that browser window in class.
-6. On the AiPaper, open **Fastnotes Ink Test**, select **Share to Mac (USB)**,
-   then choose **Ink layers**. It sends pen coordinates over the private USB port.
+6. On the AiPaper, open the separate **Fastnotes Ink Test** launcher icon and tap
+   **USB whiteboard**. That starts the existing **Ink layers** mode and sends pen
+   coordinates through the cable. The Mac viewer should report **AiPaper connected via USB-C**.
 
 If \`adb reverse\` says \`not support command\`, the firmware's restricted ADB
 implementation prevents this USB method. On the full-size AiPaper,
@@ -39,3 +40,16 @@ Do not assume that installing this APK alone proves USB support.
   exactly match Fastnotes' stroke-object eraser. This is a diagnostic first pass.
 - Tests on the actual full-size device are still required for live latency,
   pressure width and USB transport behavior.
+
+## Safe installation
+
+The experimental `debug` variant uses app ID `dev.fastnotes.usbpreview`, so
+it installs alongside the original `dev.fastnotes` app without replacing or
+clearing the original saved notebook. GitHub Actions uploads the test APK
+named `fastnotes-usb-preview-debug` for this branch's pull request.
+Do not uninstall the original Fastnotes.
+
+If the USB debugging prompt appears, approve the Mac before running
+`adb -d reverse tcp:17172 tcp:17172`. Verify the mapping with
+`adb -d reverse --list`. This requires Android USB debugging; a USB cable
+alone is not enough to create the app-to-Mac connection.
