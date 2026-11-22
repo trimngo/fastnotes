@@ -47,6 +47,9 @@ class NativeBufferProbe internal constructor(
     var onInkSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     var pressureEnabled = true
+    // Only the USB whiteboard opts into white paint erasing. Normal notebook
+    // and diagnostic eraser behavior remains unchanged.
+    var usbWhiteboard = false
     val active get() = panel?.active == true
     val penDown get() = panel?.penDown == true
     val samples get() = panel?.sampleCount ?: 0
@@ -112,7 +115,8 @@ class NativeBufferProbe internal constructor(
             checkpoint("${mode.label}: calling native controller start")
             check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation,
                 visible = clip, inkLayers = mode.inkLayers, frameHandoff = mode.inkLayers,
-                pressureInk = mode.inkLayers && pressureEnabled))
+                pressureInk = mode.inkLayers && pressureEnabled,
+                whiteboardPaintErase = mode.inkLayers && usbWhiteboard))
             status = "${mode.label} requested. Live ink is unverified."
             checkpoint("${mode.label}: native controller returned; active=${engine.active}; mode=${engine.lastActiveMode}")
             true
