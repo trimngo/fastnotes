@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AiPaper Live Whiteboard</title>
+<style>
+html,body {margin:0;width:100%;height:100%;overflow:hidden;background:white;font-family:system-ui,-apple-system,sans-serif}
+canvas {position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud {position:fixed;top:12px;right:14px;background:#fffef0e8;border:1px solid #d8d8d0;border-radius:8px;
+padding:7px 11px;font-size:13px;color:#444;user-select:none}
+.dot {display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#b1b1b1}
+#status[data-connected="true"] .dot {background:#21865a}
+</style></head><body>
+<canvas id="paper"></canvas>
+<div id="hud"><span id="status" data-connected="false"><span class="dot"></span><span id="message">Connecting...</span></span></div>
+<script>
+'use strict';
+const canvas = document.getElementById('paper'), ctx = canvas.getContext('2d');
+const status = document.getElementById('status'), message = document.getElementById('message');
+let events = [], current = null;
+function resize() {
+  canvas.width = Math.round(innerWidth * devicePixelRatio);
+  canvas.height = Math.round(innerHeight * devicePixelRatio);
+  redraw();
+}
+function coords(event) {
+  const s = Math.min(canvas.width/event.w, canvas.height/event.h);
+  return { x:event.x*s+(canvas.width-event.w*s)/2,
+           y:event.y*s+(canvas.height-event.h*s)/2, s };
+}
+function draw(event) {
+  if (event.action === 'cancel') { current=null; return; }
+  const pt=coords(event);
+  if (event.action==='down' || !current) {
+    current={x:pt.x,y:pt.y,eraser:event.eraser};
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,(event.eraser?12:1.6)*pt.s,0,Math.PI*2);
+    ctx.fillStyle=event.eraser?'white':'black'; ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.moveTo(current.x,current.y); ctx.lineTo(pt.x,pt.y);
+    ctx.strokeStyle=event.eraser?'white':'black';
+    ctx.lineWidth=(event.eraser?24:3.2)*pt.s;
+    ctx.lineCap='round';ctx.lineJoin='round'; ctx.stroke();
+    current={x:pt.x,y:pt.y,eraser:event.eraser};
+  }
+  if (event.action==='up') current=null;
+}
+function redraw() {
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  current=null;
+  for (const event of events) draw(event);
+}
+addEventListener('resize',resize); resize();
+const feed=new EventSource('/events');
+feed.onopen=()=>{status.dataset.connected='true'; message.textContent='Receiver connected';};
+feed.onerror=()=>{status.dataset.connected='false'; message.textContent='Reconnecting to receiver...';};
+feed.onmessage=({data})=>{
+  const event=JSON.parse(data);
+  if(event.type==='history') {events=event.events; redraw();}
+  else if(event.type==='reset') {events=[]; redraw();}
+  else if(event.type==='sample') {events.push(event);draw(event);}
+};
+</script></body></html>
