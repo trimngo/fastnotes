@@ -53,3 +53,20 @@ If the USB debugging prompt appears, approve the Mac before running
 `adb -d reverse tcp:17172 tcp:17172`. Verify the mapping with
 `adb -d reverse --list`. This requires Android USB debugging; a USB cable
 alone is not enough to create the app-to-Mac connection.
+
+## White erasing and pen proximity cursor
+
+**USB whiteboard mode only:** the eraser paints opaque white into the native
+transparent ink buffer, matching the Mac's white eraser stroke. This avoids
+relying on transparent pixels to remove previously presented E Ink pixels.
+It is **visual white overpainting**, not a vector-object deletion. It is
+appropriate for the plain white projection canvas; do not use it with patterned
+or non-white backgrounds.
+
+When the firmware supplies stylus `HOVER_MOVE` or `HOVER_ENTER` without pen
+contact, the Mac browser draws a thin cursor ring at that position. Flipping
+to the eraser (or using a stylus eraser button) shows a wider dashed circle.
+The cursor never becomes permanent ink and is hidden while writing, on
+hover exit, on reset, and on USB disconnect. Actual hover delivery on the
+full-size AiPaper must be confirmed with device testing; some firmware may
+suppress hover callbacks.
