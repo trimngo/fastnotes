@@ -4,17 +4,23 @@
 <style>
 html,body {margin:0;width:100%;height:100%;overflow:hidden;background:white;font-family:system-ui,-apple-system,sans-serif}
 canvas {position:fixed;inset:0;width:100%;height:100%;display:block}
+#cursor {position:fixed;display:none;z-index:3;pointer-events:none;border:2px solid #555;
+ border-radius:50%;box-sizing:border-box;transform:translate(-50%,-50%);
+ box-shadow:0 0 0 1px white; width:12px;height:12px}
+#cursor.eraser {border-style:dashed;border-color:#8a4b32}
 #hud {position:fixed;top:12px;right:14px;background:#fffef0e8;border:1px solid #d8d8d0;border-radius:8px;
 padding:7px 11px;font-size:13px;color:#444;user-select:none}
 .dot {display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#b1b1b1}
 #status[data-connected="true"] .dot {background:#21865a}
 </style></head><body>
 <canvas id="paper"></canvas>
+<div id="cursor" aria-hidden="true"></div>
 <div id="hud"><span id="status" data-connected="false"><span class="dot"></span><span id="message">Connecting...</span></span></div>
 <script>
 'use strict';
 const canvas = document.getElementById('paper'), ctx = canvas.getContext('2d');
 const status = document.getElementById('status'), message = document.getElementById('message');
+const cursor = document.getElementById('cursor');
 let events = [], current = null;
 function resize() {
   canvas.width = Math.round(innerWidth * devicePixelRatio);
@@ -27,6 +33,7 @@ function coords(event) {
            y:event.y*s+(canvas.height-event.h*s)/2, s };
 }
 function draw(event) {
+  if (event.action === 'hover' || event.action === 'leave') return;
   if (event.action === 'cancel') { current=null; return; }
   const pt=coords(event);
   if (event.action==='down' || !current) {
@@ -42,6 +49,17 @@ function draw(event) {
   }
   if (event.action==='up') current=null;
 }
+function showHover(event) {
+  if (event.action === 'leave') {cursor.style.display='none';return;}
+  const p = coords(event);
+  const diameter = event.eraser ? Math.max(12, 24*p.s/devicePixelRatio) : 13;
+  cursor.style.width = diameter+'px';
+  cursor.style.height = diameter+'px';
+  cursor.style.left = (p.x/devicePixelRatio)+'px';
+  cursor.style.top = (p.y/devicePixelRatio)+'px';
+  cursor.classList.toggle('eraser',event.eraser);
+  cursor.style.display = 'block';
+}
 function redraw() {
   ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
   current=null;
@@ -54,11 +72,15 @@ feed.onerror=()=>{status.dataset.connected='false'; message.textContent='Reconne
 feed.onmessage=({data})=>{
   const event=JSON.parse(data);
   if(event.type==='device') {
+    if(!event.connected) cursor.style.display='none';
     status.dataset.connected=String(event.connected);
     message.textContent=event.connected?'AiPaper connected via USB-C':'Waiting for USB-C AiPaper...';
   }
   else if(event.type==='history') {events=event.events; redraw();}
-  else if(event.type==='reset') {events=[]; redraw();}
-  else if(event.type==='sample') {events.push(event);draw(event);}
+  else if(event.type==='reset') {events=[]; cursor.style.display='none'; redraw();}
+  else if(event.type==='sample') {
+    if(event.action==='hover'||event.action==='leave') showHover(event);
+    else {cursor.style.display='none';events.push(event);draw(event);}
+  }
 };
 </script></body></html>
