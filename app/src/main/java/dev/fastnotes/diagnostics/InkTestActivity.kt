@@ -141,13 +141,16 @@ class InkTestActivity : Activity() {
         row("USB whiteboard" to {
             usbRelay?.close()
             usbRelay = UsbInkForwarder()
+            nativeProbe.usbWhiteboard = true
             startNativeTest(NativeBufferMode.INK_LAYERS)
         }, "Clear USB page" to {
             usbRelay?.clearRemote()
+            nativeProbe.usbWhiteboard = true
             startNativeTest(NativeBufferMode.INK_LAYERS)
         }, "Stop USB" to {
             usbRelay?.close()
             usbRelay = null
+            nativeProbe.usbWhiteboard = false
             status.text = "USB whiteboard stopped. Ink Test remains available."
         })
         row("Android pen" to {
@@ -244,6 +247,7 @@ class InkTestActivity : Activity() {
 
     private fun startNativeTest(mode: NativeBufferMode) {
         if (!stopTest("Preparing ${mode.label}…")) return
+        nativeProbe.usbWhiteboard = usbRelay != null
         nativeProbe.pressureEnabled = pressureEnabled
         modeLabel = mode.label
         resetObservation()
