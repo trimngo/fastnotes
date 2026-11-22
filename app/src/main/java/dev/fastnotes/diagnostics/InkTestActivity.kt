@@ -222,7 +222,12 @@ class InkTestActivity : Activity() {
             }
         }
         root.addView(observations)
-        paper = InkTestView(this).apply { onStrokeFinished = { status.text = stats() } }
+        paper = InkTestView(this).apply {
+            onStrokeFinished = { status.text = stats() }
+            onHoverSample = { action, x, y, w, h, pressure, eraser ->
+                usbRelay?.submit(action, x, y, w, h, pressure, eraser)
+            }
+        }
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         status = TextView(this).apply {
             text = "Android pen: write a rapid continuous up/down stroke."
