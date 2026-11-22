@@ -60,6 +60,8 @@ class UsbInkForwarder {
             MotionEvent.ACTION_DOWN -> "down"
             MotionEvent.ACTION_MOVE -> "move"
             MotionEvent.ACTION_UP -> "up"
+            MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> "hover"
+            MotionEvent.ACTION_HOVER_EXIT -> "leave"
             else -> return
         }
         if (!queue.offer(InkPacket(code, x, y, width, height, pressure, eraser))) {
