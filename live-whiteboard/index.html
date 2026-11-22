@@ -49,11 +49,15 @@ function redraw() {
 }
 addEventListener('resize',resize); resize();
 const feed=new EventSource('/events');
-feed.onopen=()=>{status.dataset.connected='true'; message.textContent='Receiver connected';};
+feed.onopen=()=>{status.dataset.connected='true'; message.textContent='Waiting for USB-C AiPaper...';};
 feed.onerror=()=>{status.dataset.connected='false'; message.textContent='Reconnecting to receiver...';};
 feed.onmessage=({data})=>{
   const event=JSON.parse(data);
-  if(event.type==='history') {events=event.events; redraw();}
+  if(event.type==='device') {
+    status.dataset.connected=String(event.connected);
+    message.textContent=event.connected?'AiPaper connected via USB-C':'Waiting for USB-C AiPaper...';
+  }
+  else if(event.type==='history') {events=event.events; redraw();}
   else if(event.type==='reset') {events=[]; redraw();}
   else if(event.type==='sample') {events.push(event);draw(event);}
 };
