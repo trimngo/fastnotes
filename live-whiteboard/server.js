@@ -10,6 +10,7 @@ const WEB_PORT = 17171;
 const INK_PORT = 17172;
 const HOST = '127.0.0.1'; // Only exposed through adb reverse; never listen on a public interface.
 const clients = new Set();
+let tabletConnections = 0;
 let history = [];
 const MAX_EVENTS = 100_000;
 
@@ -37,6 +38,7 @@ const web = http.createServer((req, res) => {
     });
     clients.add(res);
     send(res, {type:'history', events:history});
+    send(res, {type:'device', connected:tabletConnections > 0});
     req.on('close', () => clients.delete(res));
   } else if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, {'content-type':'application/json'});
@@ -52,6 +54,8 @@ const ink = net.createServer(socket => {
   socket.setEncoding('utf8');
   let buffer = '';
   console.log('AiPaper connected');
+  tabletConnections++;
+  publish({type:'device', connected:true});
   socket.on('data', chunk => {
     buffer += chunk;
     if (buffer.length > 1024 * 1024) { socket.destroy(); return; }
@@ -74,6 +78,10 @@ const ink = net.createServer(socket => {
     }
   });
   socket.on('error', err => console.warn('AiPaper connection:', err.code || err.message));
-  socket.on('close', () => console.log('AiPaper disconnected'));
+  socket.on('close', () => {
+    tabletConnections = Math.max(0, tabletConnections - 1);
+    publish({type:'device', connected:tabletConnections > 0});
+    console.log('AiPaper disconnected');
+  });
 });
 ink.listen(INK_PORT, HOST, () => console.log('USB ink receiver listening on 127.0.0.1:' + INK_PORT));
