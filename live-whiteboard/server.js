@@ -20,7 +20,7 @@ function send(res, event) {
 }
 function publish(event) {
   if (event.type === 'reset') history = [];
-  if (event.type === 'sample') {
+  if (event.type === 'sample' && event.action !== 'hover' && event.action !== 'leave') {
     history.push(event);
     if (history.length > MAX_EVENTS) history = []; // Avoid unbounded growth during long lectures.
   }
@@ -67,7 +67,7 @@ const ink = net.createServer(socket => {
         const event = JSON.parse(line);
         if (event.type === 'reset') publish({type:'reset'});
         if (event.type === 'sample' &&
-            ['down','move','up','cancel'].includes(event.action) &&
+            ['down','move','up','cancel','hover','leave'].includes(event.action) &&
             [event.x,event.y,event.w,event.h].every(Number.isFinite) &&
             event.w > 0 && event.h > 0 && event.w < 10000 && event.h < 10000) {
           publish({type:'sample',action:event.action,x:event.x,y:event.y,
