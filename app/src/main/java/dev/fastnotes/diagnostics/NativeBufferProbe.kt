@@ -44,6 +44,7 @@ class NativeBufferProbe internal constructor(
     var status = "No native buffer test requested."
         private set
     var onStrokeFinished: (() -> Unit)? = null
+    var onInkSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     var pressureEnabled = true
     val active get() = panel?.active == true
@@ -77,6 +78,13 @@ class NativeBufferProbe internal constructor(
             else raster.page(Canvas(source), note, viewport)
             val engine = panelFactory(mode)
             panel = engine
+            val dx = (bufferBounds.left - canvasBounds.left).toFloat()
+            val dy = (bufferBounds.top - canvasBounds.top).toFloat()
+            val paperWidth = canvasBounds.width()
+            val paperHeight = canvasBounds.height()
+            engine.onInkSample = { action, x, y, pressure, eraser ->
+                onInkSample?.invoke(action, x + dx, y + dy, paperWidth, paperHeight, pressure, eraser)
+            }
             engine.onEditsAvailable = {
                 // No file IO or View access on the firmware callback thread; no scratch edits
                 // reach NoteStore. A fresh controller and identity check reject stale callbacks.
@@ -159,6 +167,7 @@ class NativeBufferProbe internal constructor(
         lastDetails = details()
         panel = null // queued callbacks from this controller can no longer touch the test
         engine.onEditsAvailable = null
+        engine.onInkSample = null
         engine.onFailure = null
         checkpoint("${mode?.label}: stopping native controller")
         engine.stop()
