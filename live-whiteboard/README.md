@@ -7,19 +7,19 @@ E Ink drawing; the Mac receives stylus input and authoritative saved notes.
 
 ## Start on the Mac
 
-You need Node.js 18+, Android platform-tools (\`adb\`) and USB debugging
+You need Node.js 18+, Android platform-tools (`adb`) and USB debugging
 authorized for your Mac. For example:
 
-\`\`\`sh
+```sh
 cd fastnotes/live-whiteboard
 node server.js
-\`\`\`
+```
 
-The Mac will serve \`http://127.0.0.1:17171\`. Project that browser tab.
-The server manages \`adb -d reverse tcp:17172 tcp:17172\` automatically
+The Mac will serve `http://127.0.0.1:17171`. Project that browser tab.
+The server manages `adb -d reverse tcp:17172 tcp:17172` automatically
 while running. You normally **do not need to enter adb commands again**
 after unplugging and reconnecting the cable. Check that the tablet still
-appears in \`adb devices\` if authorization or USB data mode changes.
+appears in `adb devices` if authorization or USB data mode changes.
 
 ## Write on the AiPaper
 
@@ -44,9 +44,12 @@ use **Sheets** to return to the prior sheet; the prior sheet remains saved.
   through Fastnotes' existing per-sheet atomic store. USB disconnects do not
   clear the document, restart the notebook or invalidate the saved sheet.
 - **On the Mac:** snapshots are cached in
-  \`~/.fastnotes-usb/whiteboard-latest.json\`. The browser shows the last
-  received sheet even after unplugging or restarting the Node server.
-  When USB reconnects, the current tablet sheet replaces that cache.
+  `~/.fastnotes-usb/whiteboard-latest.json`. A separate JSON copy of every
+  mirrored sheet is also kept in `~/.fastnotes-usb/sheets/`, identified by its
+  document UUID. The browser continues to show the last received sheet after
+  unplugging or restarting the server. Reconnection restores the active sheet.
+  These JSON files are recovery copies; automatic importing into Android is
+  not implemented yet.
 - **Live pen samples:** are temporary overlays between completed-document
   snapshots. They aren't the saved document.
 - **Eraser:** the USB native renderer provides a white-painted live preview and
@@ -63,10 +66,10 @@ use **Sheets** to return to the prior sheet; the prior sheet remains saved.
 
 This branch's GitHub Actions APK uses the default runner's temporary debug
 signing key. A later downloaded APK may not install over the old USB preview.
-Uninstalling \`dev.fastnotes.usbpreview\` **deletes that test app's saved sheets**.
+Uninstalling `dev.fastnotes.usbpreview` **deletes that test app's saved sheets**.
 Before installing any update over a version that contains valuable notes,
 export/back up the data or use a stable local signing key. Do NOT uninstall
-the original \`dev.fastnotes\`; it is a different package. Stable app signing
+the original `dev.fastnotes`; it is a different package. Stable app signing
 and safe migration remain prerequisites before this becomes lecture-ready.
 
 This has been compiled and unit-tested in CI, but actual physical E Ink erasing,
