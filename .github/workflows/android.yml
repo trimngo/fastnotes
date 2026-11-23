@@ -22,8 +22,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Install compile SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Test, lint, and compile
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease :app:assembleDebug
+      - name: Compile and package preview
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+      - name: Node receiver syntax
+        run: node --check live-whiteboard/server.js
       - name: Upload isolated USB preview APK
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
@@ -32,3 +34,5 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Run Android unit tests and lint
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug
