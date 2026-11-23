@@ -113,7 +113,7 @@ class UsbInkForwarder {
                     socket = link
                     queue.clear() // No stale in-flight pen movements after unplugging.
                     val lastPong = AtomicLong(SystemClock.uptimeMillis())
-                    link.soTimeout = 1500
+                    link.soTimeout = 5000
                     val reader = Thread({
                         try {
                             val input = BufferedReader(InputStreamReader(link.getInputStream(), StandardCharsets.UTF_8))
@@ -133,25 +133,26 @@ class UsbInkForwarder {
                         var lastPing = 0L
                         while (running.get() && !link.isClosed) {
                             val now = SystemClock.uptimeMillis()
-                            if (now - lastPong.get() > 6000) throw java.io.IOException("USB heartbeat expired")
+                            if (now - lastPong.get() > 9000) throw java.io.IOException("USB heartbeat expired")
                             if (now - lastPing >= 1200) {
                                 out.write("{\"type\":\"ping\"}\n")
                                 out.flush()
                                 lastPing = now
                             }
-                            // Drain live pen events before broadcasting the authoritative
-                            // document, so a final UP cannot reappear over a new snapshot.
-                            val packet = queue.poll(45, TimeUnit.MILLISECONDS)
+                            // A full canonical sheet supersedes raw live samples.
+                            // Send it on every new socket and after committed edits,
+                            // including when the pen keeps hovering continuously.
+                            val doc = latestDocument
+                            if (doc != null && doc.revision != sentRevision) {
+                                queue.clear()
+                                out.write(doc.wire())
+                                out.flush()
+                                sentRevision = doc.revision
+                            }
+                            val packet = queue.poll(35, TimeUnit.MILLISECONDS)
                             if (packet != null) {
                                 out.write(packet.wire())
                                 out.flush()
-                            } else {
-                                val doc = latestDocument
-                                if (doc != null && doc.revision != sentRevision) {
-                                    out.write(doc.wire())
-                                    out.flush()
-                                    sentRevision = doc.revision
-                                }
                             }
                         }
                     }
