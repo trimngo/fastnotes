@@ -39,8 +39,20 @@ function persistSnapshot(data) {
   pendingSave = pendingSave.then(async () => {
     await fs.promises.mkdir(cacheDir,{recursive:true,mode:0o700});
     const tmp = cachePath+'.tmp';
-    await fs.promises.writeFile(tmp,JSON.stringify(data),{mode:0o600});
+    const json=JSON.stringify(data);
+    await fs.promises.writeFile(tmp,json,{mode:0o600});
     await fs.promises.rename(tmp,cachePath);
+    // Keep independent backups for every sheet displayed through USB,
+    // rather than overwriting the only recoverable copy on sheet switch.
+    const safeId=/^[a-fA-F0-9-]{16,64}$/.test(data.docId)?data.docId:null;
+    if(safeId){
+      const sheetDir=path.join(cacheDir,'sheets');
+      await fs.promises.mkdir(sheetDir,{recursive:true,mode:0o700});
+      const dest=path.join(sheetDir,safeId+'.json');
+      const staged=dest+'.tmp';
+      await fs.promises.writeFile(staged,json,{mode:0o600});
+      await fs.promises.rename(staged,dest);
+    }
   }).catch(err=>console.warn('Could not cache whiteboard:',err.message));
 }
 
