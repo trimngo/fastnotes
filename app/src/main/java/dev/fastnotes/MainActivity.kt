@@ -24,6 +24,7 @@ import dev.fastnotes.ink.Tool
 import dev.fastnotes.model.Note
 import dev.fastnotes.updates.UpdateActivity
 import dev.fastnotes.updates.UpdateState
+import dev.fastnotes.diagnostics.UsbInkForwarder
 import dev.fastnotes.diagnostics.InkTestActivity
 import dev.fastnotes.diagnostics.InkProbeLog
 import java.text.DateFormat
@@ -42,6 +43,17 @@ class MainActivity : Activity() {
     private lateinit var eraser: Button
     private lateinit var move: Button
     private lateinit var update: Button
+    private lateinit var usbButton: Button
+    @Volatile private var usbRelay: UsbInkForwarder? = null
+    private var usbEnabled = false
+    private val usbStatusTick = object : Runnable {
+        override fun run() {
+            if (usbEnabled && !isDestroyed) {
+                updateHint()
+                if (::paper.isInitialized) paper.postDelayed(this, 1400)
+            }
+        }
+    }
     private val updateObserver: (UpdateState) -> Unit = { state ->
         val label = if (state is UpdateState.Downloading) "Updating…" else "Update"
         if (update.text != label) update.text = label
@@ -78,6 +90,10 @@ class MainActivity : Activity() {
         update = button("Update") { openUpdates() }.apply { visibility = View.GONE }
         header.addView(update)
         header.addView(button("Sheets") { sheets() })
+        usbButton = button("USB OFF") { setUsbEnabled(!usbEnabled) }.apply {
+            contentDescription = "Turn USB-C live whiteboard mirroring on or off"
+        }
+        header.addView(usbButton)
         root.addView(header)
         root.addView(rule())
 
@@ -109,11 +125,16 @@ class MainActivity : Activity() {
             onEdited = { edited() }
             onScrolled = {
                 revision++
+                syncUsbSheet()
                 status.text = "Saving…"
                 removeCallbacks(saveScroll)
                 postDelayed(saveScroll, 350)
             }
             onEngineChanged = { updateHint() }
+            onUsbSample = { action, x, y, w, h, pressure, eraser ->
+                usbRelay?.submit(action, x, y, w, h, pressure, eraser)
+            }
+            onViewportChanged = { syncUsbSheet() }
             palmGuard = app.preferences.getBoolean("palmGuard", true)
             setRendering(app.preferences.getBoolean("frontBuffer", true),
                 app.preferences.getBoolean("viwoodsNativeInk", true))
@@ -156,6 +177,7 @@ class MainActivity : Activity() {
                 title.text = app.editor!!.note.title
                 status.text = if (loaded.recovered) "Recovered previous saved copy" else "Saved on this device"
                 updateButtons()
+                if (app.preferences.getBoolean("usbMirrorOn", false)) setUsbEnabled(true)
             }, {
                 status.text = "Couldn’t open sheets. Tap here to retry."
                 status.setOnClickListener { start() }
@@ -186,6 +208,8 @@ class MainActivity : Activity() {
         paper.removeCallbacks(saveScroll)
         paper.setEnvironment(false, modalCount > 0, isInMultiWindowMode)
         if (started) save()
+        // Intentionally keep the USB worker alive through brief backgrounding
+        // or cable disconnects. The document remains in local NoteStore.
         super.onPause()
     }
 
@@ -196,6 +220,7 @@ class MainActivity : Activity() {
 
     private fun edited() {
         revision++
+        syncUsbSheet()
         title.text = app.editor?.note?.title ?: "Fastnotes"
         updateButtons()
         save()
@@ -212,6 +237,43 @@ class MainActivity : Activity() {
             saveFailed = !success
             status.text = if (success) "Saved on this device" else "Couldn’t save · tap to retry"
         }
+    }
+
+    private fun syncUsbSheet() {
+        val note = app.editor?.note ?: return
+        if (::paper.isInitialized) usbRelay?.syncDocument(note, paper.width, paper.height)
+    }
+
+    private fun setUsbEnabled(enabled: Boolean) {
+        if (usbEnabled == enabled) return
+        // No clear, new sheet or fresh scratchpad is ever invoked by this toggle.
+        if (::paper.isInitialized) paper.finishGesture(false)
+        usbEnabled = enabled
+        app.preferences.edit().putBoolean("usbMirrorOn", enabled).apply()
+        if (enabled) {
+            usbRelay = UsbInkForwarder()
+            paper.setUsbMirroring(true)
+            syncUsbSheet()
+            paper.removeCallbacks(usbStatusTick)
+            paper.post(usbStatusTick)
+        } else {
+            paper.removeCallbacks(usbStatusTick)
+            paper.setUsbMirroring(false)
+            usbRelay?.close()
+            usbRelay = null
+            if (started) save()
+        }
+        usbButton.text = if (enabled) "USB ON" else "USB OFF"
+        usbButton.background = border(if (enabled) Color.BLACK else Color.WHITE)
+        usbButton.setTextColor(if (enabled) Color.WHITE else Color.BLACK)
+        updateHint()
+    }
+
+    override fun onDestroy() {
+        if (::paper.isInitialized) paper.removeCallbacks(usbStatusTick)
+        usbRelay?.close()
+        usbRelay = null
+        super.onDestroy()
     }
 
     private fun updateButtons() {
@@ -239,7 +301,11 @@ class MainActivity : Activity() {
                 else "Pen writes · one finger scrolls"
         }
         val engine = paper.engineLabel
-        hint.text = engine + " · " + if (engine == "Fast ink paused") "Tap this pane to resume · " + instruction else instruction
+        val usb = if (usbEnabled) if (usbRelay?.connected == true) " · USB-C linked"
+                  else " · USB-C reconnecting" else ""
+        val message = engine + usb + " · " +
+            if (engine == "Fast ink paused") "Tap this pane to resume · " + instruction else instruction
+        if (hint.text.toString() != message) hint.text = message
     }
 
     private fun sheets() {
@@ -260,6 +326,7 @@ class MainActivity : Activity() {
                         title.text = app.editor!!.note.title
                         selectTool(Tool.PEN)
                         save(); updateButtons()
+                        syncUsbSheet()
                     }
                     .setNegativeButton("Close", null)
                 show(builder.create())
@@ -284,6 +351,7 @@ class MainActivity : Activity() {
                 title.text = loaded.note.title
                 status.text = if (loaded.recovered) "Recovered previous saved copy" else "Saved on this device"
                 updateButtons()
+                syncUsbSheet()
             }, { message("Couldn’t open sheet", "The current sheet and the saved files have been preserved.") })
         }
     }
