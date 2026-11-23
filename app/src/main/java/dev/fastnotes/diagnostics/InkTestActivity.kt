@@ -48,7 +48,6 @@ class InkTestActivity : Activity() {
         PREPARED("Prepared screen", "System ink (prepared)"),
         FULL_DISPLAY("Full display", "System ink (full display)")
     }
-    @Volatile private var usbRelay: UsbInkForwarder? = null
     private var pressureEnabled = true
     private var systemExperiment = SystemExperiment.ORIGINAL
     private var nativePreparation: NativePreparation? = null
@@ -107,10 +106,6 @@ class InkTestActivity : Activity() {
         nativeProbe = NativeBufferProbe(this, log::event).also { probe ->
             probe.pressureEnabled = pressureEnabled
             probe.onStrokeFinished = { paper.nativeStrokeFinished() }
-            // The callback runs on the firmware ink thread; relay.submit never blocks.
-            probe.onInkSample = { action, x, y, w, h, pressure, eraser ->
-                usbRelay?.submit(action, x, y, w, h, pressure, eraser)
-            }
             probe.onFailure = { stopTest(probe.status) }
         }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
@@ -137,21 +132,6 @@ class InkTestActivity : Activity() {
         }, "Copy report" to {
             getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Fastnotes ink test", report()))
             Toast.makeText(this, "Ink test report copied", Toast.LENGTH_SHORT).show()
-        })
-        row("USB whiteboard" to {
-            usbRelay?.close()
-            usbRelay = UsbInkForwarder()
-            nativeProbe.usbWhiteboard = true
-            startNativeTest(NativeBufferMode.INK_LAYERS)
-        }, "Clear USB page" to {
-            usbRelay?.clearRemote()
-            nativeProbe.usbWhiteboard = true
-            startNativeTest(NativeBufferMode.INK_LAYERS)
-        }, "Stop USB" to {
-            usbRelay?.close()
-            usbRelay = null
-            nativeProbe.usbWhiteboard = false
-            status.text = "USB whiteboard stopped. Ink Test remains available."
         })
         row("Android pen" to {
             if (stopTest("Android pen: write with the pen tip.")) { modeLabel = "Android pen"; resetObservation() }
@@ -222,12 +202,7 @@ class InkTestActivity : Activity() {
             }
         }
         root.addView(observations)
-        paper = InkTestView(this).apply {
-            onStrokeFinished = { status.text = stats() }
-            onHoverSample = { action, x, y, w, h, pressure, eraser ->
-                usbRelay?.submit(action, x, y, w, h, pressure, eraser)
-            }
-        }
+        paper = InkTestView(this).apply { onStrokeFinished = { status.text = stats() } }
         root.addView(paper, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         status = TextView(this).apply {
             text = "Android pen: write a rapid continuous up/down stroke."
@@ -252,7 +227,6 @@ class InkTestActivity : Activity() {
 
     private fun startNativeTest(mode: NativeBufferMode) {
         if (!stopTest("Preparing ${mode.label}…")) return
-        nativeProbe.usbWhiteboard = usbRelay != null
         nativeProbe.pressureEnabled = pressureEnabled
         modeLabel = mode.label
         resetObservation()
@@ -515,8 +489,6 @@ class InkTestActivity : Activity() {
     }
     override fun onPause() {
         resumed = false
-        usbRelay?.close()
-        usbRelay = null
         if (systemSelected) pauseSystemTest("System ink paused; it will resume when this pane has focus.")
         else stopTest("Test paused. Select a test to start again.")
         super.onPause()
@@ -541,8 +513,6 @@ class InkTestActivity : Activity() {
     }
     override fun onDestroy() {
         resumed = false
-        usbRelay?.close()
-        usbRelay = null
         systemResumePending = false
         nativePreparation = null
         cancelNativePreparation?.invoke()
