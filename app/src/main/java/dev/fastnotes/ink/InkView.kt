@@ -82,6 +82,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         set(value) { touchCentroid = null; field = value }
     var onEdited: (() -> Unit)? = null
     var onScrolled: (() -> Unit)? = null
+    var onViewportChanged: (() -> Unit)? = null
     var onEngineChanged: (() -> Unit)? = null
     // Raw local native stylus stream; the callback must never perform IO.
     @Volatile var onUsbSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
@@ -222,6 +223,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         super.onSizeChanged(w, h, oldw, oldh)
         rebuild()
         requestEngineRefresh()
+        post { onViewportChanged?.invoke() }
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
