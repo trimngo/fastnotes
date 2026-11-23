@@ -44,8 +44,12 @@ class NativeBufferProbe internal constructor(
     var status = "No native buffer test requested."
         private set
     var onStrokeFinished: (() -> Unit)? = null
+    var onInkSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     var pressureEnabled = true
+    // Only the USB whiteboard opts into white paint erasing. Normal notebook
+    // and diagnostic eraser behavior remains unchanged.
+    var usbWhiteboard = false
     val active get() = panel?.active == true
     val penDown get() = panel?.penDown == true
     val samples get() = panel?.sampleCount ?: 0
@@ -77,6 +81,13 @@ class NativeBufferProbe internal constructor(
             else raster.page(Canvas(source), note, viewport)
             val engine = panelFactory(mode)
             panel = engine
+            val dx = (bufferBounds.left - canvasBounds.left).toFloat()
+            val dy = (bufferBounds.top - canvasBounds.top).toFloat()
+            val paperWidth = canvasBounds.width()
+            val paperHeight = canvasBounds.height()
+            engine.onInkSample = { action, x, y, pressure, eraser ->
+                onInkSample?.invoke(action, x + dx, y + dy, paperWidth, paperHeight, pressure, eraser)
+            }
             engine.onEditsAvailable = {
                 // No file IO or View access on the firmware callback thread; no scratch edits
                 // reach NoteStore. A fresh controller and identity check reject stale callbacks.
@@ -104,7 +115,8 @@ class NativeBufferProbe internal constructor(
             checkpoint("${mode.label}: calling native controller start")
             check(engine.start(context, source, note, bufferBounds.left, bufferBounds.top, orientation,
                 visible = clip, inkLayers = mode.inkLayers, frameHandoff = mode.inkLayers,
-                pressureInk = mode.inkLayers && pressureEnabled))
+                pressureInk = mode.inkLayers && pressureEnabled,
+                whiteboardPaintErase = mode.inkLayers && usbWhiteboard))
             status = "${mode.label} requested. Live ink is unverified."
             checkpoint("${mode.label}: native controller returned; active=${engine.active}; mode=${engine.lastActiveMode}")
             true
@@ -159,6 +171,7 @@ class NativeBufferProbe internal constructor(
         lastDetails = details()
         panel = null // queued callbacks from this controller can no longer touch the test
         engine.onEditsAvailable = null
+        engine.onInkSample = null
         engine.onFailure = null
         checkpoint("${mode?.label}: stopping native controller")
         engine.stop()

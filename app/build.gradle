@@ -16,6 +16,14 @@ android {
         versionCode 19
         versionName '0.3.2-test15'
     }
+    // Experimental debug APK installs alongside the user's signed Fastnotes.
+    // Do not change the original package or require uninstalling saved notes.
+    buildTypes {
+        debug {
+            applicationIdSuffix '.usbpreview'
+            versionNameSuffix '-usbpreview'
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

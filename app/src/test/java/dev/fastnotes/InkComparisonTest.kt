@@ -140,7 +140,7 @@ class InkComparisonTest {
         val info = app.packageManager.getActivityInfo(ComponentName(app, InkTestActivity::class.java), 0)
         assertFalse(info.exported)
         assertEquals(app.packageName + ":inktest", info.processName)
-        val launcher = app.packageManager.getActivityInfo(ComponentName(app, app.packageName + ".InkTestLauncher"), 0)
+        val launcher = app.packageManager.getActivityInfo(ComponentName(app, "dev.fastnotes.InkTestLauncher"), 0)
         assertEquals(app.packageName + ":inktest", launcher.processName)
         assertEquals(InkTestActivity::class.java.name, launcher.targetActivity)
         val lifecycle = Robolectric.buildActivity(InkTestActivity::class.java).setup().visible()

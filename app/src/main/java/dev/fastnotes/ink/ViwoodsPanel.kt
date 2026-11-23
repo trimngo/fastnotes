@@ -58,6 +58,18 @@ class ViwoodsPanel internal constructor(
     private var inkLayers = false
     private var frameHandoff = false
     private var pressureInk = false
+    // Experimental USB whiteboard only: white gestures paint over black ink on the
+    // native layer instead of clearing alpha, which cannot erase visible panel ink.
+    private var whiteboardPaintErase = false
+    private val whiteEraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 24f
+        blendMode = BlendMode.SRC
+    }
+    private val whiteEraserDot = Paint(whiteEraserPaint).apply { style = Paint.Style.FILL }
     // Scratch-only widths. Note/InkPoint and the notebook's on-disk format stay unchanged.
     // Each immutable list belongs to the same committed Stroke ID and point order.
     private var pressureWidths: Map<Long, List<Float>> = emptyMap()
@@ -99,6 +111,8 @@ class ViwoodsPanel internal constructor(
     @Volatile var maxRenderMicros = 0L
         private set
     var onEditsAvailable: (() -> Unit)? = null
+    /** Raw stylus input for optional USB whiteboard; callback MUST be nonblocking. */
+    @Volatile var onInkSample: ((Int, Float, Float, Int, Boolean) -> Unit)? = null
     var onFailure: (() -> Unit)? = null
     @Volatile var active = false
         private set
@@ -143,7 +157,8 @@ class ViwoodsPanel internal constructor(
 
     fun start(context: Context, source: Bitmap, note: Note, x: Int, y: Int,
               orientation: Int, erase: Boolean = false, visible: Rect? = null, inkLayers: Boolean = false,
-              frameHandoff: Boolean = false, pressureInk: Boolean = false): Boolean {
+              frameHandoff: Boolean = false, pressureInk: Boolean = false,
+              whiteboardPaintErase: Boolean = false): Boolean {
         stop()
         val report = availabilityReport()
         if (report != "Available") { status = report; return false }
@@ -156,6 +171,7 @@ class ViwoodsPanel internal constructor(
                 this.inkLayers = inkLayers
                 this.frameHandoff = frameHandoff
                 this.pressureInk = pressureInk
+                this.whiteboardPaintErase = whiteboardPaintErase && inkLayers
                 pressureWidths = emptyMap()
                 completedRevision = 0
                 frame = source.copy(Bitmap.Config.ARGB_8888, true)
@@ -241,6 +257,17 @@ class ViwoodsPanel internal constructor(
                 val x = (args[0] as Number).toFloat() - screenBounds.left
                 val y = (args[1] as Number).toFloat() - screenBounds.top
                 val buttons = (args[7] as Number).toInt()
+                val relay = onInkSample
+                val validPenEvent = when (action) {
+                    MotionEvent.ACTION_DOWN -> inside(x, y)
+                    MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> penDown
+                    MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> inside(x, y)
+                    MotionEvent.ACTION_HOVER_EXIT -> true
+                    else -> false
+                }
+                val eventEraser = if (penDown || action == MotionEvent.ACTION_UP) strokeIsEraser
+                    else forceEraser || type == MotionEvent.TOOL_TYPE_ERASER ||
+                        buttons and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_STYLUS_SECONDARY) != 0
                 when (action) {
                     MotionEvent.ACTION_DOWN -> {
                         if (!inside(x, y)) return
@@ -265,6 +292,9 @@ class ViwoodsPanel internal constructor(
                     }
                     MotionEvent.ACTION_CANCEL -> if (penDown) finishLocked(true)
                 }
+                // Separate the visual native ink route from the Mac's pen-coordinate stream.
+                // No JSON, IO, or thread blocking is allowed inside the firmware callback.
+                if (validPenEvent) relay?.invoke(action, x, y, pressure, eventEraser)
             }
         } catch (_: Throwable) {
             status = "Native ink stopped at " + failureStage
@@ -302,7 +332,31 @@ class ViwoodsPanel internal constructor(
         }
         sampleCount++
         lastInkTime = SystemClock.uptimeMillis()
-        if (strokeIsEraser) {
+        if (strokeIsEraser && whiteboardPaintErase) {
+            // Opaque white is a visible foreground mark in the native compositor.
+            // Simply clearing to transparent here does not remove pixels already
+            // presented on an E Ink panel.
+            val a = view.screen(previous)
+            val b = view.screen(point)
+            val c = canvas!!
+            val save = c.save()
+            try {
+                c.clipRect(visibleLocal)
+                if (a == b) c.drawCircle(b.x, b.y, whiteEraserPaint.strokeWidth / 2f, whiteEraserDot)
+                else c.drawLine(a.x, a.y, b.x, b.y, whiteEraserPaint)
+            } finally { c.restoreToCount(save) }
+            val pad = whiteEraserPaint.strokeWidth.toInt() / 2 + 4
+            queueRender(Rect(floor(min(a.x, b.x)).toInt() - pad, floor(min(a.y, b.y)).toInt() - pad,
+                ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad))
+            // Keep the tablet's saved Note as the source of truth. White paint is
+            // only immediate E Ink visual feedback; full-stroke erasing persists
+            // via the same NativeEdit.Erase used by the normal notebook.
+            for (stroke in page.strokes) {
+                if (stroke.id !in erased && Eraser.hits(stroke, previous, point, eraserRadius)) {
+                    erased.add(stroke.id)
+                }
+            }
+        } else if (strokeIsEraser) {
             var dirty: Rect? = null
             for (stroke in page.strokes) {
                 if (stroke.id !in erased && Eraser.hits(stroke, previous, point, eraserRadius)) {
@@ -436,6 +490,15 @@ class ViwoodsPanel internal constructor(
         if (cancel) {
             redrawPage()
             queueRender(Rect(0, 0, view.width, view.height))
+        } else if (strokeIsEraser && whiteboardPaintErase) {
+            // Keep the white native preview visible for an uninterrupted frame
+            // handoff, but actually delete hit strokes from the saved document.
+            if (erased.isNotEmpty()) {
+                val ids = erased.toSet()
+                page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
+                pressureWidths = pressureWidths.filterKeys { it !in ids }
+                edits.add(NativeEdit.Erase(ids))
+            }
         } else if (strokeIsEraser && erased.isNotEmpty()) {
             val ids = erased.toSet()
             page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
@@ -503,6 +566,16 @@ class ViwoodsPanel internal constructor(
      * A private rasterizer avoids sharing mutable Paint state with the native callback thread.
      */
     internal fun drawCompleted(target: Canvas): NativeCompletionToken? {
+        if (whiteboardPaintErase) {
+            // Preserve chronological black/white overpainting exactly as seen on
+            // the panel, including subsequent black strokes across erased areas.
+            return synchronized(lock) {
+                if (!active) return@synchronized null
+                target.drawColor(Color.WHITE)
+                frame?.let { target.drawBitmap(it, 0f, 0f, null) }
+                NativeCompletionToken(generation, completedRevision)
+            }
+        }
         val snapshot = synchronized(lock) {
             if (!active) return null
             CompletedSnapshot(page, view, pressureWidths, Rect(visibleLocal),

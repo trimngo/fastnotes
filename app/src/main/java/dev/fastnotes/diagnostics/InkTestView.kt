@@ -112,6 +112,9 @@ class InkTestView internal constructor(context: Context, private val frameCommit
     var maxEventAgeMs = 0L
         private set
     var onStrokeFinished: (() -> Unit)? = null
+    // Hover can arrive through Android's View even if firmware ENote does not
+    // forward proximity samples. No panel redraw is requested for this event.
+    var onHoverSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
     private val settle: Runnable = Runnable {
         // Native completion is authoritative: firmware may suppress duplicate Android UPs.
         if ((captureNative != null || pointer < 0) && nativePenDown?.invoke() != true) {
@@ -212,6 +215,21 @@ class InkTestView internal constructor(context: Context, private val frameCommit
         for (index in 0 until count) completed[index].let { canvas.drawPath(it.path, if (it.pressureAware) pressureInk else ink) }
         if (!firmwareTest) current?.let { canvas.drawPath(it.path, ink) }
         preparationDrawn()
+    }
+
+    override fun onHoverEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        if (action !in setOf(MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE,
+                MotionEvent.ACTION_HOVER_EXIT)) return super.onHoverEvent(event)
+        if (event.pointerCount == 0) return false
+        val tool = event.getToolType(0)
+        if (tool != MotionEvent.TOOL_TYPE_STYLUS && tool != MotionEvent.TOOL_TYPE_ERASER) return false
+        val eraser = tool == MotionEvent.TOOL_TYPE_ERASER ||
+            event.buttonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or
+                MotionEvent.BUTTON_STYLUS_SECONDARY) != 0
+        onHoverSample?.invoke(action, event.getX(0), event.getY(0),
+            width, height, 0, eraser)
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
