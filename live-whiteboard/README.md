@@ -1,72 +1,74 @@
-# USB live whiteboard (experimental)
+# USB-C whiteboard with saved Fastnotes sheets (experimental)
 
-This experiment **reuses the proven Fastnotes Ink layers mode** on the AiPaper
-and shows strokes on the Mac in a clean browser window. The Mac draws from
-stylus coordinates instead of mirroring the E Ink display.
+This projects the **main Fastnotes notebook** on a Mac browser over a USB-C
+data cable. It does not mirror tablet pixels and needs no Wi-Fi, cloud service,
+login, account or advertisements. The tablet continues using native fast
+E Ink drawing; the Mac receives stylus input and authoritative saved notes.
 
-The AiPaper side remains a small native Android component; a pure browser
-canvas **cannot** access the private Viwoods fast-ink render path. The browser
-app is the Mac viewer.
+## Start on the Mac
 
-## Mac setup
+You need Node.js 18+, Android platform-tools (\`adb\`) and USB debugging
+authorized for your Mac. For example:
 
-1. Install Node.js 18+ if necessary.
-2. From this folder run: \`node server.js\`
-3. Plug the AiPaper into the Mac via a USB-C **data** cable.
-4. With Android USB debugging enabled, run on the Mac:
+\`\`\`sh
+cd fastnotes/live-whiteboard
+node server.js
+\`\`\`
 
-   \`adb devices\`
-   \`adb -d reverse tcp:17172 tcp:17172\`
+The Mac will serve \`http://127.0.0.1:17171\`. Project that browser tab.
+The server manages \`adb -d reverse tcp:17172 tcp:17172\` automatically
+while running. You normally **do not need to enter adb commands again**
+after unplugging and reconnecting the cable. Check that the tablet still
+appears in \`adb devices\` if authorization or USB data mode changes.
 
-5. Open \`http://127.0.0.1:17171\` in the Mac browser, then share that browser window in class.
-6. On the AiPaper, open the separate **Fastnotes Ink Test** launcher icon and tap
-   **USB whiteboard**. That starts the existing **Ink layers** mode and sends pen
-   coordinates through the cable. The Mac viewer should report **AiPaper connected via USB-C**.
+## Write on the AiPaper
 
-If \`adb reverse\` says \`not support command\`, the firmware's restricted ADB
-implementation prevents this USB method. On the full-size AiPaper,
-\`adb shell\` has previously been observed to fail, so **reverse is not yet verified**.
-Do not assume that installing this APK alone proves USB support.
+1. Install the separate **Fastnotes USB preview** test APK. Open
+   **Fastnotes**, not the separate **Fastnotes Ink Test** launcher.
+2. Open a saved sheet (or make a new one). Its pen, Erase, Undo, Redo,
+   and Sheets controls work without USB.
+3. Tap **USB OFF** in the main screen header to turn it **USB ON**.
+   You can switch it back off without clearing or deleting the sheet.
+4. Write normally. Strokes appear live on the Mac. The document remains
+   stored on the tablet independently of the cable.
+5. To resume a disconnected session, reconnect USB-C. The Mac server restores
+   ADB reverse and the Android relay reconnects using heartbeats and
+   resends the entire current saved sheet.
 
-## Scope
+**There is no Clear USB page command.** If a button changes the active sheet,
+use **Sheets** to return to the prior sheet; the prior sheet remains saved.
 
-- No ads, cloud service, login, mirroring, or screen capture.
-- Keeps the existing ink rendering modes and notebook storage intact.
-- The viewer starts empty for each connection; it is a projection tool,
-  not a note archive.
-- Designed to run only over ADB's localhost USB reverse tunnel. Both Mac ports
-  are bound to localhost, not the LAN.
-- Eraser is shown as a broad white stroke in the viewer, so its result may not
-  exactly match Fastnotes' stroke-object eraser. This is a diagnostic first pass.
-- Tests on the actual full-size device are still required for live latency,
-  pressure width and USB transport behavior.
+## Persistence and recovery
 
-## Safe installation
+- **On the tablet:** each completed pen/eraser gesture, undo and redo is saved
+  through Fastnotes' existing per-sheet atomic store. USB disconnects do not
+  clear the document, restart the notebook or invalidate the saved sheet.
+- **On the Mac:** snapshots are cached in
+  \`~/.fastnotes-usb/whiteboard-latest.json\`. The browser shows the last
+  received sheet even after unplugging or restarting the Node server.
+  When USB reconnects, the current tablet sheet replaces that cache.
+- **Live pen samples:** are temporary overlays between completed-document
+  snapshots. They aren't the saved document.
+- **Eraser:** the USB native renderer provides a white-painted live preview and
+  commits whole-stroke erasures to the saved vector sheet. The Mac view
+  redraws from the canonical note after each completed gesture.
+- **Hover:** a cursor ring appears on the Mac if the firmware or Android view
+  delivers proximity input. This doesn't draw a permanent stroke.
+- **No networking outside the cable:** all receiver ports are bound to
+  127.0.0.1. The Mac launches only the local ADB command.
+- **Data privacy:** saved whiteboard cache is readable by the Mac user. No
+  telemetry or remote upload. Delete that cache file to remove the local mirror.
 
-The experimental `debug` variant uses app ID `dev.fastnotes.usbpreview`, so
-it installs alongside the original `dev.fastnotes` app without replacing or
-clearing the original saved notebook. GitHub Actions uploads the test APK
-named `fastnotes-usb-preview-debug` for this branch's pull request.
-Do not uninstall the original Fastnotes.
+## Important test-build caveat
 
-If the USB debugging prompt appears, approve the Mac before running
-`adb -d reverse tcp:17172 tcp:17172`. Verify the mapping with
-`adb -d reverse --list`. This requires Android USB debugging; a USB cable
-alone is not enough to create the app-to-Mac connection.
+This branch's GitHub Actions APK uses the default runner's temporary debug
+signing key. A later downloaded APK may not install over the old USB preview.
+Uninstalling \`dev.fastnotes.usbpreview\` **deletes that test app's saved sheets**.
+Before installing any update over a version that contains valuable notes,
+export/back up the data or use a stable local signing key. Do NOT uninstall
+the original \`dev.fastnotes\`; it is a different package. Stable app signing
+and safe migration remain prerequisites before this becomes lecture-ready.
 
-## White erasing and pen proximity cursor
-
-**USB whiteboard mode only:** the eraser paints opaque white into the native
-transparent ink buffer, matching the Mac's white eraser stroke. This avoids
-relying on transparent pixels to remove previously presented E Ink pixels.
-It is **visual white overpainting**, not a vector-object deletion. It is
-appropriate for the plain white projection canvas; do not use it with patterned
-or non-white backgrounds.
-
-When the firmware supplies stylus `HOVER_MOVE` or `HOVER_ENTER` without pen
-contact, the Mac browser draws a thin cursor ring at that position. Flipping
-to the eraser (or using a stylus eraser button) shows a wider dashed circle.
-The cursor never becomes permanent ink and is hidden while writing, on
-hover exit, on reset, and on USB disconnect. Actual hover delivery on the
-full-size AiPaper must be confirmed with device testing; some firmware may
-suppress hover callbacks.
+This has been compiled and unit-tested in CI, but actual physical E Ink erasing,
+pressure and tablet/USB recovery require an on-device test. The normal
+signed Fastnotes application remains unchanged.
