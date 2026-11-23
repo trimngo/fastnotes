@@ -348,6 +348,14 @@ class ViwoodsPanel internal constructor(
             val pad = whiteEraserPaint.strokeWidth.toInt() / 2 + 4
             queueRender(Rect(floor(min(a.x, b.x)).toInt() - pad, floor(min(a.y, b.y)).toInt() - pad,
                 ceil(max(a.x, b.x)).toInt() + pad, ceil(max(a.y, b.y)).toInt() + pad))
+            // Keep the tablet's saved Note as the source of truth. White paint is
+            // only immediate E Ink visual feedback; full-stroke erasing persists
+            // via the same NativeEdit.Erase used by the normal notebook.
+            for (stroke in page.strokes) {
+                if (stroke.id !in erased && Eraser.hits(stroke, previous, point, eraserRadius)) {
+                    erased.add(stroke.id)
+                }
+            }
         } else if (strokeIsEraser) {
             var dirty: Rect? = null
             for (stroke in page.strokes) {
@@ -483,8 +491,14 @@ class ViwoodsPanel internal constructor(
             redrawPage()
             queueRender(Rect(0, 0, view.width, view.height))
         } else if (strokeIsEraser && whiteboardPaintErase) {
-            // The native bitmap already contains the white overpainting. Unlike
-            // the notebook eraser, this mode intentionally retains an ink raster.
+            // Keep the white native preview visible for an uninterrupted frame
+            // handoff, but actually delete hit strokes from the saved document.
+            if (erased.isNotEmpty()) {
+                val ids = erased.toSet()
+                page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
+                pressureWidths = pressureWidths.filterKeys { it !in ids }
+                edits.add(NativeEdit.Erase(ids))
+            }
         } else if (strokeIsEraser && erased.isNotEmpty()) {
             val ids = erased.toSet()
             page = page.copy(strokes = page.strokes.filterNot { it.id in ids })
