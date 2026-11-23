@@ -57,6 +57,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
     private var frontEnabled = true
     private var panelWanted = false
+    private var usbMirroring = false
     private var foreground = false
     private var obscured = false
     private var multiWindow = false
@@ -82,6 +83,12 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     var onEdited: (() -> Unit)? = null
     var onScrolled: (() -> Unit)? = null
     var onEngineChanged: (() -> Unit)? = null
+    // Raw local native stylus stream; the callback must never perform IO.
+    @Volatile var onUsbSample: ((Int, Float, Float, Int, Int, Int, Boolean) -> Unit)? = null
+    private var handoffImage: Bitmap? = null
+    private var handoffRevision = 0L
+    @Volatile private var handoffDrawn = 0L
+    private var cancelHandoffFrame: (() -> Unit)? = null
     var sampleCount = 0L
         private set
     var sampleAgeTotalMs = 0L
@@ -90,6 +97,9 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     init {
         panel.onEditsAvailable = { post { drainNative() } }
         panel.onFailure = { post { failNative(panel.status) } }
+        panel.onInkSample = { action, x, y, pressure, erase ->
+            onUsbSample?.invoke(action, x, y, width, height, pressure, erase)
+        }
         setBackgroundColor(Color.WHITE)
         clipChildren = true
         clipToPadding = true
@@ -140,6 +150,17 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         refreshEngine()
     }
 
+    /** Normal saved notebook remains editable whether USB is connected or not. */
+    fun setUsbMirroring(enabled: Boolean) {
+        if (usbMirroring == enabled) return
+        finishGesture(false)
+        stopNative()
+        usbMirroring = enabled
+        if (enabled) panelWanted = true
+        panelFailed = false
+        refreshEngine()
+    }
+
     fun setEnvironment(resumed: Boolean, modal: Boolean, multiWindow: Boolean) {
         if (resumed && !foreground) panelFailed = false
         foreground = resumed
@@ -150,6 +171,7 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
 
     val panelAvailable get() = hasNativeApi
+    val usbMirrorEnabled get() = usbMirroring
     val nativeDiagnostics get() = panel.status + "\nNative callbacks: " + panel.rawEventCount +
         " · accepted samples: " + panel.sampleCount + " · panel updates: " + panel.renderCount +
         "\nLast native picture mode: " + panel.lastActiveMode + " (4 = FAST)" +
@@ -262,8 +284,18 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
         stopNative()
         if (geometry != null && !panelFailed) {
             lastAttemptGeometry = geometry
-            val started = panel.start(context, image!!, editor!!.note, geometry.x, geometry.y,
-                geometry.orientation, tool == Tool.ERASER, geometry.clip)
+            // Reuse the pressure-free transparent native Ink layers mode that
+            // already worked well in the isolated USB test. Keep the ruled
+            // Android paper separate from the native foreground bitmap.
+            val source = if (usbMirroring) Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) else image!!
+            val started = try {
+                panel.start(context, source, editor!!.note, geometry.x, geometry.y,
+                    geometry.orientation, tool == Tool.ERASER, geometry.clip,
+                    inkLayers = usbMirroring, frameHandoff = usbMirroring,
+                    pressureInk = false, whiteboardPaintErase = usbMirroring)
+            } finally {
+                if (source !== image) source.recycle()
+            }
             lastStartReport = "${geometry.width}×${geometry.height} at ${geometry.x},${geometry.y}; " +
                 "visible ${geometry.clip.toShortString()}; panel orientation ${geometry.orientation}, " +
                 "pane orientation ${resources.configuration.orientation}; " + panel.status
@@ -321,6 +353,13 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
 
     @AnyThread
     private fun drawScene(canvas: Canvas) {
+        val preview = handoffImage
+        if (preview != null) {
+            canvas.drawColor(Color.WHITE)
+            canvas.drawBitmap(preview, 0f, 0f, null)
+            handoffDrawn = handoffRevision
+            return
+        }
         if (panel.drawPreview(canvas)) return
         synchronized(lock) {
             canvas.drawColor(Color.WHITE)
@@ -419,7 +458,14 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
     }
 
     override fun onHoverEvent(event: MotionEvent): Boolean {
-        if (event.pointerCount > 0 && isPen(event, 0)) lastPenTime = SystemClock.uptimeMillis()
+        if (event.pointerCount > 0 && isPen(event, 0)) {
+            lastPenTime = SystemClock.uptimeMillis()
+            if (usbMirroring && event.actionMasked in setOf(MotionEvent.ACTION_HOVER_ENTER,
+                    MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_HOVER_EXIT)) {
+                onUsbSample?.invoke(event.actionMasked, event.getX(0), event.getY(0),
+                    width, height, 0, eraser(event, 0))
+            }
+        }
         return true
     }
 
@@ -538,12 +584,67 @@ class InkView(context: Context, private val panel: ViwoodsPanel = ViwoodsPanel()
                 // Keep the native preview untouched if a newer stroke is already in flight.
                 rebuild(restartNative = false)
             }
-            panel.acknowledge()
+            if (usbMirroring && panel.active) requestNativeHandoff() else panel.acknowledge()
             if (completed.isNotEmpty()) notifyEngineChanged()
         } finally { drainingNative = false }
     }
 
+    private fun requestNativeHandoff() {
+        if (width <= 0 || height <= 0 || !classic.isAttachedToWindow) {
+            panel.acknowledge()
+            return
+        }
+        val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val token = panel.drawCompleted(Canvas(image))
+        if (token == null) {
+            image.recycle()
+            panel.acknowledge()
+            return
+        }
+        cancelHandoffFrame?.invoke()
+        handoffImage = image
+        val version = ++handoffRevision
+        if (classic.isHardwareAccelerated) {
+            fun register() {
+                if (handoffRevision != version || !panel.active) return
+                val observer = classic.viewTreeObserver
+                if (!observer.isAlive) return
+                val callback = Runnable {
+                    val drawn = handoffDrawn
+                    classic.post {
+                        if (handoffRevision != version || !panel.active) return@post
+                        if (drawn >= version) {
+                            cancelHandoffFrame = null
+                            panel.acknowledge(token)
+                            handoffImage = null
+                        } else {
+                            register()
+                            classic.postInvalidateOnAnimation()
+                        }
+                    }
+                }
+                observer.registerFrameCommitCallback(callback)
+                cancelHandoffFrame = {
+                    if (observer.isAlive) observer.unregisterFrameCommitCallback(callback)
+                }
+            }
+            register()
+        } else {
+            classic.post {
+                if (handoffRevision == version && handoffDrawn >= version) {
+                    panel.acknowledge(token)
+                    handoffImage = null
+                }
+            }
+        }
+        classic.invalidate()
+    }
+
     private fun stopNative() {
+        cancelHandoffFrame?.invoke()
+        cancelHandoffFrame = null
+        handoffRevision++
+        handoffImage = null
         panel.stop()
         activeGeometry = null
         drainNative()
