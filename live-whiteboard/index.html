@@ -1,86 +1,112 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AiPaper Live Whiteboard</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AiPaper USB Whiteboard</title>
 <style>
 html,body {margin:0;width:100%;height:100%;overflow:hidden;background:white;font-family:system-ui,-apple-system,sans-serif}
 canvas {position:fixed;inset:0;width:100%;height:100%;display:block}
 #cursor {position:fixed;display:none;z-index:3;pointer-events:none;border:2px solid #555;
  border-radius:50%;box-sizing:border-box;transform:translate(-50%,-50%);
- box-shadow:0 0 0 1px white; width:12px;height:12px}
+ box-shadow:0 0 0 1px white;width:13px;height:13px}
 #cursor.eraser {border-style:dashed;border-color:#8a4b32}
 #hud {position:fixed;top:12px;right:14px;background:#fffef0e8;border:1px solid #d8d8d0;border-radius:8px;
-padding:7px 11px;font-size:13px;color:#444;user-select:none}
+ padding:7px 11px;font-size:13px;color:#444;user-select:none}
 .dot {display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#b1b1b1}
 #status[data-connected="true"] .dot {background:#21865a}
 </style></head><body>
-<canvas id="paper"></canvas>
-<div id="cursor" aria-hidden="true"></div>
-<div id="hud"><span id="status" data-connected="false"><span class="dot"></span><span id="message">Connecting...</span></span></div>
+<canvas id="paper"></canvas><div id="cursor" aria-hidden="true"></div>
+<div id="hud"><span id="status" data-connected="false"><span class="dot"></span>
+<span id="message">Connecting to local receiver...</span></span></div>
 <script>
 'use strict';
-const canvas = document.getElementById('paper'), ctx = canvas.getContext('2d');
-const status = document.getElementById('status'), message = document.getElementById('message');
-const cursor = document.getElementById('cursor');
-let events = [], current = null;
-function resize() {
-  canvas.width = Math.round(innerWidth * devicePixelRatio);
-  canvas.height = Math.round(innerHeight * devicePixelRatio);
-  redraw();
+const canvas=document.getElementById('paper'),ctx=canvas.getContext('2d');
+const status=document.getElementById('status'),message=document.getElementById('message');
+const cursor=document.getElementById('cursor');
+let base=null, events=[], current=null;
+const sane=n=>Number.isFinite(n)&&Math.abs(n)<1e7;
+function resize(){
+ canvas.width=Math.round(innerWidth*devicePixelRatio);
+ canvas.height=Math.round(innerHeight*devicePixelRatio);
+ redraw();
 }
-function coords(event) {
-  const s = Math.min(canvas.width/event.w, canvas.height/event.h);
-  return { x:event.x*s+(canvas.width-event.w*s)/2,
-           y:event.y*s+(canvas.height-event.h*s)/2, s };
+function transform(w,h){
+ const s=Math.min(canvas.width/w,canvas.height/h);
+ return {s,ox:(canvas.width-w*s)/2,oy:(canvas.height-h*s)/2};
 }
-function draw(event) {
-  if (event.action === 'hover' || event.action === 'leave') return;
-  if (event.action === 'cancel') { current=null; return; }
-  const pt=coords(event);
-  if (event.action==='down' || !current) {
-    current={x:pt.x,y:pt.y,eraser:event.eraser};
-    ctx.beginPath(); ctx.arc(pt.x,pt.y,(event.eraser?12:1.6)*pt.s,0,Math.PI*2);
-    ctx.fillStyle=event.eraser?'white':'black'; ctx.fill();
-  } else {
-    ctx.beginPath(); ctx.moveTo(current.x,current.y); ctx.lineTo(pt.x,pt.y);
-    ctx.strokeStyle=event.eraser?'white':'black';
-    ctx.lineWidth=(event.eraser?24:3.2)*pt.s;
-    ctx.lineCap='round';ctx.lineJoin='round'; ctx.stroke();
-    current={x:pt.x,y:pt.y,eraser:event.eraser};
+function coords(e){
+ const t=transform(e.w,e.h);
+ return {x:e.x*t.s+t.ox,y:e.y*t.s+t.oy,s:t.s};
+}
+function renderStroke(points,width){
+ if(!base || !Array.isArray(points) || !points.length || !sane(width))return;
+ const w=base.viewWidth,h=base.viewHeight;
+ if(!(w>0&&h>0&&base.pageWidth>0))return;
+ const viewScale=w/base.pageWidth,t=transform(w,h);
+ let started=false;
+ ctx.beginPath();
+ for(const p of points){
+  if(!Array.isArray(p)||p.length<2||!sane(p[0])||!sane(p[1]))continue;
+  const x=p[0]*viewScale*t.s+t.ox, y=(p[1]-base.scrollY)*viewScale*t.s+t.oy;
+  if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+ }
+ if(!started)return;
+ ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='black';
+ ctx.lineWidth=Math.max(0.8,width*viewScale*t.s);
+ if(points.length===1){
+  const p=points[0];
+  if(Array.isArray(p)&&sane(p[0])&&sane(p[1])){
+   const x=p[0]*viewScale*t.s+t.ox,y=(p[1]-base.scrollY)*viewScale*t.s+t.oy;
+   ctx.beginPath();ctx.arc(x,y,ctx.lineWidth/2,0,Math.PI*2);ctx.fillStyle='black';ctx.fill();
   }
-  if (event.action==='up') current=null;
+ }else ctx.stroke();
 }
-function showHover(event) {
-  if (event.action === 'leave') {cursor.style.display='none';return;}
-  const p = coords(event);
-  const diameter = event.eraser ? Math.max(12, 24*p.s/devicePixelRatio) : 13;
-  cursor.style.width = diameter+'px';
-  cursor.style.height = diameter+'px';
-  cursor.style.left = (p.x/devicePixelRatio)+'px';
-  cursor.style.top = (p.y/devicePixelRatio)+'px';
-  cursor.classList.toggle('eraser',event.eraser);
-  cursor.style.display = 'block';
+function draw(e){
+ if(e.action==='hover'||e.action==='leave')return;
+ if(e.action==='cancel'){current=null;return;}
+ const p=coords(e);
+ if(e.action==='down'||!current){
+  current={x:p.x,y:p.y,eraser:e.eraser};
+  ctx.beginPath();ctx.arc(p.x,p.y,(e.eraser?12:1.6)*p.s,0,Math.PI*2);
+  ctx.fillStyle=e.eraser?'white':'black';ctx.fill();
+ }else{
+  ctx.beginPath();ctx.moveTo(current.x,current.y);ctx.lineTo(p.x,p.y);
+  ctx.strokeStyle=e.eraser?'white':'black';
+  ctx.lineWidth=(e.eraser?24:3.2)*p.s;
+  ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
+  current={x:p.x,y:p.y,eraser:e.eraser};
+ }
+ if(e.action==='up')current=null;
 }
-function redraw() {
-  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  current=null;
-  for (const event of events) draw(event);
+function redraw(){
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+ current=null;
+ if(base&&Array.isArray(base.strokes)){
+  // Restores all completed strokes from the saved tablet document.
+  for(const stroke of base.strokes)renderStroke(stroke.points,stroke.width);
+ }
+ for(const e of events)draw(e);
 }
-addEventListener('resize',resize); resize();
+function showHover(e){
+ if(e.action==='leave'){cursor.style.display='none';return;}
+ const p=coords(e),size=e.eraser?Math.max(12,24*p.s/devicePixelRatio):13;
+ cursor.style.width=size+'px';cursor.style.height=size+'px';
+ cursor.style.left=(p.x/devicePixelRatio)+'px';cursor.style.top=(p.y/devicePixelRatio)+'px';
+ cursor.classList.toggle('eraser',e.eraser);cursor.style.display='block';
+}
+addEventListener('resize',resize);resize();
 const feed=new EventSource('/events');
-feed.onopen=()=>{status.dataset.connected='true'; message.textContent='Waiting for USB-C AiPaper...';};
-feed.onerror=()=>{status.dataset.connected='false'; message.textContent='Reconnecting to receiver...';};
+feed.onopen=()=>{message.textContent='Waiting for USB-C AiPaper...';};
+feed.onerror=()=>{status.dataset.connected='false';message.textContent='Mac receiver reconnecting; sheet preserved';};
 feed.onmessage=({data})=>{
-  const event=JSON.parse(data);
-  if(event.type==='device') {
-    if(!event.connected) cursor.style.display='none';
-    status.dataset.connected=String(event.connected);
-    message.textContent=event.connected?'AiPaper connected via USB-C':'Waiting for USB-C AiPaper...';
-  }
-  else if(event.type==='history') {events=event.events; redraw();}
-  else if(event.type==='reset') {events=[]; cursor.style.display='none'; redraw();}
-  else if(event.type==='sample') {
-    if(event.action==='hover'||event.action==='leave') showHover(event);
-    else {cursor.style.display='none';events.push(event);draw(event);}
-  }
+ const e=JSON.parse(data);
+ if(e.type==='device'){
+  if(!e.connected)cursor.style.display='none';
+  status.dataset.connected=String(e.connected);
+  message.textContent=e.connected?'USB-C connected':(base?'USB-C disconnected · sheet saved':'Waiting for USB-C AiPaper...');
+ }else if(e.type==='snapshot'){base=e;events=[];cursor.style.display='none';redraw();}
+ else if(e.type==='history'){events=e.events;redraw();}
+ else if(e.type==='sample'){
+  if(e.action==='hover'||e.action==='leave')showHover(e);
+  else{cursor.style.display='none';events.push(e);draw(e);}
+ }
 };
 </script></body></html>
