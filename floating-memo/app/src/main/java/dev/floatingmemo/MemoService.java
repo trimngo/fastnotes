@@ -9,24 +9,34 @@ import android.view.*;
 import android.widget.*;
 import java.util.*;
 public class MemoService extends Service {
- WindowManager wm; WindowManager.LayoutParams p; LinearLayout panel,toolbar,footer; Ink ink; TextView title,status,mode; MemoStore store;
- final Handler handler=new Handler(Looper.getMainLooper()); NativeInk nativeInk; boolean minimized,attached,erase,fastWanted=true; int w,h,shade=110;
+ WindowManager wm; WindowManager.LayoutParams p; FrameLayout root; LinearLayout panel,toolbar,footer; Ink ink; TextView title,status,mode,palmButton; MemoStore store;
+ final Handler handler=new Handler(Looper.getMainLooper()); NativeInk nativeInk; boolean minimized,attached,erase,palmLocked,fastWanted=true; int w,h,shade=110;
  final Runnable startNative=()->{if(attached&&!minimized&&fastWanted&&ink!=null&&ink.getWidth()>0){if(nativeInk.start(ink))status.setText("Native ink");else status.setText("Android fallback");}};
- final BroadcastReceiver screen=new BroadcastReceiver(){public void onReceive(Context c,Intent i){pauseInk();}};
+ final BroadcastReceiver screen=new BroadcastReceiver(){public void onReceive(Context c,Intent i){pauseInk();if(palmLocked)setPalmLock(false,false);}};
  int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
  int sw(){return getResources().getDisplayMetrics().widthPixels;} int sh(){return getResources().getDisplayMetrics().heightPixels;}
  @Override public IBinder onBind(Intent i){return null;}
  @Override public void onCreate(){super.onCreate();wm=(WindowManager)getSystemService(WINDOW_SERVICE);store=new MemoStore(this);nativeInk=new NativeInk(this);registerReceiver(screen,new IntentFilter(Intent.ACTION_SCREEN_OFF));}
  @Override public int onStartCommand(Intent i,int f,int id){
+ if(i!=null&&"dev.floatingmemo.CLOSE".equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
  NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("memo","Floating Memo",NotificationManager.IMPORTANCE_LOW));
  PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
- startForeground(1,new Notification.Builder(this,"memo").setContentTitle("Floating Memo").setContentText("Floating notebook is running").setSmallIcon(android.R.drawable.ic_menu_edit).setContentIntent(open).build());
+ PendingIntent dismiss=PendingIntent.getService(this,1,new Intent(this,MemoService.class).setAction("dev.floatingmemo.CLOSE"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
+ startForeground(1,new Notification.Builder(this,"memo").setContentTitle("Floating Memo").setContentText("Floating notebook is running").setSmallIcon(android.R.drawable.ic_menu_edit).setContentIntent(open).addAction(android.R.drawable.ic_menu_close_clear_cancel,"Close memo",dismiss).build());
  if(!Settings.canDrawOverlays(this)){stopSelf();return START_NOT_STICKY;}if(!attached){try{show();}catch(RuntimeException e){android.util.Log.e("FloatingMemo","Overlay failed",e);stopSelf();}}else schedule();return START_NOT_STICKY;}
  TextView text(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.BLACK);t.setGravity(Gravity.CENTER);return t;}
  TextView button(LinearLayout r,String s,Runnable action){TextView t=text(s,14);t.setBackgroundColor(0xffeeeeee);r.addView(t,new LinearLayout.LayoutParams(0,dp(39),1));t.setOnClickListener(v->action.run());return t;}
  void show(){SharedPreferences prefs=getSharedPreferences("window",0);w=prefs.getInt("w",(int)(sw()*.72));h=prefs.getInt("h",(int)(sh()*.42));shade=prefs.getInt("shade",110);fastWanted=prefs.getBoolean("native",true);
  p=new WindowManager.LayoutParams(w,h,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.LEFT;p.x=prefs.getInt("x",dp(10));p.y=prefs.getInt("y",dp(55));clamp();
- panel=new LinearLayout(this){@Override public boolean dispatchTouchEvent(MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){pauseInk();return false;}return super.dispatchTouchEvent(e);}};panel.setOrientation(1);panel.setPadding(dp(1),dp(1),dp(1),dp(1));android.graphics.drawable.GradientDrawable border=new android.graphics.drawable.GradientDrawable();border.setColor(Color.TRANSPARENT);border.setStroke(dp(1),Color.DKGRAY);panel.setBackground(border);
+ root=new FrameLayout(this){
+  @Override public boolean dispatchTouchEvent(MotionEvent e){
+   if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){pauseInk();return false;}
+   boolean handled=super.dispatchTouchEvent(e);
+   return handled||palmLocked;
+  }
+  @Override public boolean onTouchEvent(MotionEvent e){return palmLocked||super.onTouchEvent(e);}
+ };root.setBackgroundColor(Color.TRANSPARENT);root.setMotionEventSplittingEnabled(true);
+ panel=new LinearLayout(this);panel.setOrientation(1);panel.setPadding(dp(1),dp(1),dp(1),dp(1));android.graphics.drawable.GradientDrawable border=new android.graphics.drawable.GradientDrawable();border.setColor(Color.TRANSPARENT);border.setStroke(dp(1),Color.DKGRAY);panel.setBackground(border);
  LinearLayout head=new LinearLayout(this);head.setBackgroundColor(0xffdddddd);panel.addView(head,new LinearLayout.LayoutParams(-1,dp(42)));
  title=text("Memo",15);head.addView(title,new LinearLayout.LayoutParams(0,-1,1));title.setOnTouchListener(new Drag(false));
  TextView min=text("− / +",16);head.addView(min,new LinearLayout.LayoutParams(dp(60),-1));min.setOnClickListener(v->toggle());
@@ -35,24 +45,46 @@ public class MemoService extends Service {
  button(toolbar,"‹",()->change(-1));button(toolbar,"›",()->change(1));button(toolbar,"New",()->{pauseInk();store.notes.add(new MemoStore.Note());store.index=store.notes.size()-1;refresh();});
  button(toolbar,"Undo",()->{pauseInk();ArrayList<MemoStore.Stroke> a=store.current().strokes;if(!a.isEmpty())a.remove(a.size()-1);refresh();});
  TextView er=button(toolbar,"Erase",()->{});er.setOnClickListener(v->{pauseInk();erase=!erase;er.setText(erase?"Pen":"Erase");refresh();});
+ palmButton=button(toolbar,"Palm off",()->setPalmLock(!palmLocked,true));palmButton.setTextSize(12);palmButton.setContentDescription("Palm Lock off");
  button(toolbar,"Shade",()->{pauseInk();shade=shade==0?75:shade==75?145:shade==145?215:shade==215?255:0;ink.invalidate();persist();schedule();});
  ink=new Ink();panel.addView(ink,new LinearLayout.LayoutParams(-1,0,1));
  footer=new LinearLayout(this);footer.setBackgroundColor(0xffeeeeee);panel.addView(footer,new LinearLayout.LayoutParams(-1,dp(32)));
  status=text("",12);footer.addView(status,new LinearLayout.LayoutParams(0,-1,1));
  mode=text(fastWanted?"Fast: on":"Fast: off",12);footer.addView(mode,new LinearLayout.LayoutParams(dp(94),-1));mode.setOnClickListener(v->{pauseInk();fastWanted=!fastWanted;mode.setText(fastWanted?"Fast: on":"Fast: off");persist();schedule();});
  TextView resize=text("↘",18);footer.addView(resize,new LinearLayout.LayoutParams(dp(42),-1));resize.setOnTouchListener(new Drag(true));
- wm.addView(panel,p);attached=true;save();schedule();}
+ root.addView(panel,new FrameLayout.LayoutParams(p.width,p.height,Gravity.TOP|Gravity.LEFT));
+ wm.addView(root,windowParams());attached=true;save();schedule();}
  void save(){boolean ok=store.save();if(title!=null)title.setText("Memo "+(store.index+1)+"/"+store.notes.size());if(status!=null)status.setText(ok?"Saved":"SAVE FAILED");}
  void pauseInk(){handler.removeCallbacks(startNative);if(nativeInk!=null)nativeInk.stop();if(ink!=null){ink.finish();ink.invalidate();}}
  void schedule(){handler.removeCallbacks(startNative);if(fastWanted&&!erase&&!minimized&&attached)handler.postDelayed(startNative,300);}
  void refresh(){ink.rebuild();save();schedule();}
  void change(int d){pauseInk();store.index=Math.max(0,Math.min(store.notes.size()-1,store.index+d));refresh();}
- void toggle(){pauseInk();save();minimized=!minimized;if(minimized){w=p.width;h=p.height;p.width=dp(220);p.height=dp(44);}else{p.width=w;p.height=h;}int vis=minimized?View.GONE:View.VISIBLE;toolbar.setVisibility(vis);ink.setVisibility(vis);footer.setVisibility(vis);update();persist();schedule();}
+ void toggle(){pauseInk();save();minimized=!minimized;if(minimized){palmLocked=false;updatePalmButton();}if(minimized){w=p.width;h=p.height;p.width=dp(220);p.height=dp(44);}else{p.width=w;p.height=h;}int vis=minimized?View.GONE:View.VISIBLE;toolbar.setVisibility(vis);ink.setVisibility(vis);footer.setVisibility(vis);update();persist();schedule();}
  void clamp(){p.width=Math.min(sw(),Math.max(dp(100),p.width));p.height=Math.min(sh()-dp(20),Math.max(dp(44),p.height));p.x=Math.max(0,Math.min(p.x,sw()-p.width));p.y=Math.max(0,Math.min(p.y,sh()-p.height-dp(20)));}
- void update(){clamp();if(attached)wm.updateViewLayout(panel,p);}
+ // p always holds the memo's own geometry. Only the host window expands when locked.
+ WindowManager.LayoutParams windowParams(){
+  WindowManager.LayoutParams actual=new WindowManager.LayoutParams();
+  actual.copyFrom(p);
+  if(palmLocked&&!minimized){actual.width=WindowManager.LayoutParams.MATCH_PARENT;actual.height=WindowManager.LayoutParams.MATCH_PARENT;actual.x=0;actual.y=0;actual.flags&=~WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;}
+  return actual;
+ }
+ void updatePalmButton(){if(palmButton!=null){palmButton.setText(palmLocked?"Palm ON":"Palm off");palmButton.setContentDescription(palmLocked?"Palm Lock on; tap to unlock":"Palm Lock off; tap to lock");palmButton.setBackgroundColor(palmLocked?Color.BLACK:0xffeeeeee);palmButton.setTextColor(palmLocked?Color.WHITE:Color.BLACK);}}
+ void setPalmLock(boolean enabled,boolean restartInk){
+  if(!attached||minimized||palmLocked==enabled)return;
+  pauseInk();palmLocked=enabled;updatePalmButton();
+  try{update();}catch(RuntimeException e){android.util.Log.e("FloatingMemo","Palm Lock window update failed",e);palmLocked=false;updatePalmButton();try{update();}catch(RuntimeException unrecoverable){stopSelf();return;}Toast.makeText(this,"Palm Lock unavailable",Toast.LENGTH_LONG).show();}
+  if(restartInk)schedule();
+ }
+ void update(){
+  clamp();if(!attached)return;
+  FrameLayout.LayoutParams child=new FrameLayout.LayoutParams(p.width,p.height,Gravity.TOP|Gravity.LEFT);
+  if(palmLocked&&!minimized){child.leftMargin=p.x;child.topMargin=p.y;}
+  panel.setLayoutParams(child);
+  wm.updateViewLayout(root,windowParams());
+ }
  void persist(){if(p!=null)getSharedPreferences("window",0).edit().putInt("x",p.x).putInt("y",p.y).putInt("w",w).putInt("h",h).putInt("shade",shade).putBoolean("native",fastWanted).apply();}
  @Override public void onConfigurationChanged(Configuration c){super.onConfigurationChanged(c);if(attached){pauseInk();update();schedule();}}
- @Override public void onDestroy(){pauseInk();if(store!=null)save();persist();if(attached){wm.removeView(panel);attached=false;}unregisterReceiver(screen);super.onDestroy();}
+ @Override public void onDestroy(){pauseInk();if(store!=null)save();persist();if(attached){wm.removeView(root);attached=false;palmLocked=false;}unregisterReceiver(screen);super.onDestroy();}
  class Drag implements View.OnTouchListener{final boolean resize;float x,y;int px,py,ow,oh;Drag(boolean r){resize=r;}public boolean onTouch(View v,MotionEvent e){switch(e.getActionMasked()){case MotionEvent.ACTION_DOWN:pauseInk();x=e.getRawX();y=e.getRawY();px=p.x;py=p.y;ow=p.width;oh=p.height;return true;case MotionEvent.ACTION_MOVE:int dx=Math.round(e.getRawX()-x),dy=Math.round(e.getRawY()-y);if(resize){p.width=Math.max(dp(300),ow+dx);p.height=Math.max(dp(220),oh+dy);}else{p.x=px+dx;p.y=py+dy;}update();return true;case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:if(!minimized){w=p.width;h=p.height;}persist();schedule();return true;default:return true;}}}
  class Ink extends View{
  Bitmap bitmap; Canvas cache; final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG); MemoStore.Stroke stroke; int pointer=-1;
